@@ -48,9 +48,10 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | Módulo | Responsabilidad |
 |---|---|
 | `lib/host.ts` | `waitForHost()` espera el canal `connected` y `withTimeout()` pone tope a toda llamada al host. Sin esto, una llamada encolada nunca resuelve ni lanza error. |
-| `lib/chain.ts` | Cliente de `polkadot-api`: `getHostProvider(genesis)` dentro del contenedor, WebSocket público fuera. Suscripción a bloques finalizados y consulta de hash por altura. |
+| `lib/chain.ts` | Cliente de `polkadot-api`: `getHostProvider(genesis)` dentro del contenedor, WebSocket público fuera. Suscripción a bloques finalizados y consulta de hash por altura, con RPC público de respaldo si el cliente ligero del host no sirve consultas históricas. |
 | `lib/signer.ts` | `SignerManager` en el host; cuenta `//Alice` en modo ensayo. |
-| `lib/bulletin.ts` | `BulletinAllowance` → permiso `PreimageSubmit` → `submit()`. Lectura con `lookup()`. |
+| `lib/permissions.ts` | Pide al arrancar el permiso `Remote` para `localhost`, el gateway IPFS y los RPC públicos: en el contenedor la red está detrás de permisos y un dominio no aprobado falla en silencio. |
+| `lib/bulletin.ts` | Cuota y permiso `PreimageSubmit` al empezar la charla; `submit()` al sellar. Lectura con `lookup()` (ignorando los `null` intermedios) y respaldo por el gateway IPFS, comprobando que los bytes correspondan al CID. |
 | `lib/artifact.ts` | Tipos del recibo, bytes canónicos, CID, verificación de firma y de bloques. Es el único módulo que comparten la app y el CLI. |
 | `lib/stt.ts` | Cliente WebSocket del transcriptor con reconexión y petición de sellado. |
 
@@ -62,7 +63,7 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
    1. Se pide al transcriptor la huella del WAV (8 s de tope; si no contesta se sella sin audio).
    2. Si quedaron frases sin bloque posterior, se agrega el último bloque finalizado como remache de cierre.
    3. Se construye el recibo, se calculan los bytes canónicos y se firman.
-   4. Se sube a Bulletin y se genera el QR.
+   4. Se sube a Bulletin y se genera el QR. Si la subida falla, la firma se conserva: se reintenta solo la subida, o se sigue sin Bulletin con el JSON descargable.
 4. **Recuperación.** El `chain` se guarda en `localStorage` en cada cambio. Si la página se recarga antes de sellar, la preparación ofrece recuperar la charla.
 
 ## Decisiones

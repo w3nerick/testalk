@@ -9,7 +9,7 @@ import {
   type BlocksCheck,
   type SigCheck,
 } from '../lib/artifact';
-import { fetchPreimage } from '../lib/bulletin';
+import { fetchReceipt } from '../lib/bulletin';
 import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
 import { downloadJson } from './presenter';
 
@@ -33,10 +33,12 @@ export function renderVerifier(root: HTMLElement, cid?: string): Cleanup {
     if (!key) {
       failed(root, 'Ese enlace no contiene un CID válido.');
     } else {
-      fetchPreimage(key)
+      fetchReceipt(cid, key)
         .then(bytes => {
           if (dead) return;
           if (!bytes) return failed(root, 'No se encontró el recibo en Bulletin. Puede haber expirado (Bulletin guarda 14 días).');
+          // El gateway no es de confianza: los bytes deben ser exactamente los del CID.
+          if (cidForBytes(bytes) !== cid) return failed(root, 'Los datos recibidos no corresponden a este CID.');
           let a: Artifact;
           try { a = JSON.parse(new TextDecoder().decode(bytes)); } catch { return failed(root, 'El recibo no es JSON válido.'); }
           show(root, a, cid, true);

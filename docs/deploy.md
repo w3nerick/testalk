@@ -51,6 +51,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 ## Checklist del día del evento
 
 **Una semana antes**
+- [ ] Abrir `testalk.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional.
 - [ ] Charla de prueba completa en Desktop, sellada y verificada desde otro celular
 - [ ] Confirmar que el QR proyectado se lee desde el fondo de la sala
 
@@ -67,6 +68,20 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Dejar el QR en pantalla el tiempo suficiente para que escaneen
 - [ ] Descargar el JSON y guardar el WAV de `stt/grabaciones/`: Bulletin borra a los 14 días
 
+## Comportamiento conocido del devnet
+
+Medido por [TWR.DOT](https://github.com/TheWhiteRabbitM/TWR.DOT/blob/master/docs/devnet-issues.md)
+con apps reales en el contenedor. testalk ya está escrito para convivir con esto:
+
+| Hecho | Consecuencia en testalk |
+|---|---|
+| En **Android** la subida de preimages falla con un error de codec; en **Desktop 0.1.1** funciona | Sellar siempre desde Polkadot Desktop. El público puede verificar desde el celular. |
+| La subida tarda unos **64 s** | El paso de subida avisa "hasta 1 min" y espera hasta 90 s |
+| `BulletinAllowance` responde `NotAvailable` y la subida funciona igual | `NotAvailable` es un aviso; solo `Rejected` detiene |
+| `lookup` reporta `null` hasta encontrar el preimage | El verificador ignora los `null` y espera hasta 20 s |
+| La red dentro del contenedor necesita el permiso `Remote` por dominio | Se piden al arrancar: `localhost`, el gateway IPFS y los RPC públicos |
+| `localStorage` se vacía con cada release | El borrador de la charla dura la sesión; no publiques una versión nueva durante una charla |
+
 ## Si algo falla
 
 | Síntoma | Qué hacer |
@@ -74,5 +89,5 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 | "sin transcriptor" en vivo | Seguir hablando; escribir frases clave en "Añadir frase a mano". El WAV se sigue grabando. |
 | Asset Hub no conecta | No empezar: sin ancla de inicio el recibo no prueba nada. Revisar la red. |
 | La firma no llega | Revisar el celular; el botón **Reintentar** vuelve a pedirla sin perder la charla. |
-| Bulletin no confirma | Reintentar. Si persiste, descargar el JSON: se verifica igual con el CLI. |
+| Bulletin no confirma | La charla ya está firmada: **Reintentar subida** no vuelve a pedir la firma. Si persiste, **Seguir sin Bulletin** y descargar el JSON; se verifica igual con el CLI. |
 | Se recargó la página | En preparación aparece **Recuperar charla sin sellar**. |

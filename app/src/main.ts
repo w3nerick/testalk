@@ -2,7 +2,9 @@ import './style.css';
 import { renderHome } from './views/home';
 import { renderPresenter } from './views/presenter';
 import { isCid, renderVerifier } from './views/verifier';
+import { renderDiagnostics } from './views/diagnostics';
 import type { Cleanup } from './ui';
+import { requestHostPermissions } from './lib/permissions';
 
 const root = document.getElementById('app')!;
 let cleanup: Cleanup | undefined;
@@ -17,9 +19,11 @@ function route() {
   const path = location.hash.replace(/^#\/?/, '').split('?')[0];
   if (path === 'presentar') cleanup = renderPresenter(root);
   else if (path === 'verificar') cleanup = renderVerifier(root);
+  else if (path === 'diagnostico') cleanup = renderDiagnostics(root);
   else if (isCid(path)) cleanup = renderVerifier(root, path);
   else cleanup = renderHome(root);
 }
 
+requestHostPermissions();
 window.addEventListener('hashchange', route);
 route();

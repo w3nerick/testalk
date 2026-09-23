@@ -139,9 +139,10 @@ testalk/
 │   │   │   ├── network.ts      Genesis, RPCs y gateway del devnet
 │   │   │   ├── signer.ts       SignerManager (host) o cuenta de ensayo
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
+│   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
 │   │   │   └── host.ts         waitForHost + timeouts para toda llamada al host
-│   │   ├── views/              Inicio, presentador y verificador
+│   │   ├── views/              Inicio, presentador, verificador y diagnóstico
 │   │   └── style.css           Sistema visual (oscuro y claro)
 │   ├── scripts/verify.ts       Verificador por línea de comandos
 │   └── polkadot-app-deploy.config.ts
@@ -209,6 +210,11 @@ npm run deploy     # build + PAD_ENV=devnet pad dist testalk.dot
 ```
 
 Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
+
+Después abre **`testalk.dot/#/diagnostico`** en Polkadot Desktop y en el
+celular. Prueba cada pieza de la plataforma desde el dispositivo (canal con el
+host, permisos de red, bloques, consulta histórica, transcriptor, firma y
+Bulletin) y deja un reporte copiable.
 Guía completa, reglas de dominios DotNS y checklist para el día del evento en
 [`docs/deploy.md`](docs/deploy.md).
 
@@ -222,7 +228,8 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Verificador web y CLI con comprobación on-chain de bloques
 - [x] Huella del audio dentro del recibo
 - [x] Flujo completo probado en modo ensayo contra el devnet real
-- [ ] Prueba en Polkadot Desktop y celular: firma, Bulletin y acceso a `localhost`
+- [x] Código alineado con el comportamiento medido del devnet ([detalle](docs/deploy.md#comportamiento-conocido-del-devnet))
+- [ ] Prueba en Polkadot Desktop y celular: firma de bytes con `SignerManager`, subida a Bulletin y acceso a `localhost`
 - [ ] Anclar `hash(recibo) + firma` en un contrato de Asset Hub (Bulletin borra a los 14 días)
 - [ ] Verificar en People chain que el username declarado sea dueño de la llave
 - [ ] Comparar un WAV contra la huella desde el verificador

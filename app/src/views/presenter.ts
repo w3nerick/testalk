@@ -1,9 +1,9 @@
 import QRCode from 'qrcode';
 import { icon } from '../lib/icons';
 import { ASSET_HUB_GENESIS, NETWORK, subscribeFinalized, type Block } from '../lib/chain';
-import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
+import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type AudioSeal, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
 import { connectSpeaker, currentSpeaker, signBytes, APP_DOTNS } from '../lib/signer';
-import { canUseBulletin, uploadArtifact } from '../lib/bulletin';
+import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
 import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
 import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
 import { setLocalArtifact } from './verifier';
@@ -40,6 +40,10 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let recent: Block[] = [];
   const draft: Draft = { title: '', venue: '', lang: 'es', startedAt: null, chain: [] };
   let awaitingBlock = false;
+  // Una vez firmado, un fallo de subida no debe volver a pedir la firma.
+  let signed: { artifact: Artifact; bytes: Uint8Array; cid: string } | null = null;
+  // La huella se pide una vez: después el transcriptor queda desconectado.
+  let audioSeal: AudioSeal | null | undefined;
 
   // El transcriptor se conecta desde la pantalla de preparación: así se ve si
   // está vivo antes de empezar.
@@ -167,6 +171,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         draft.chain = saved.chain;
         draft.startedAt = saved.startedAt;
       }
+      // Cuota y permiso de Bulletin ahora, con el gesto de "Empezar": al sellar ya están.
+      if (canUseBulletin() && !currentSpeaker()?.rehearsal) prepareBulletin().catch(e => console.warn('[bulletin]', e));
       live();
     };
     start.addEventListener('click', () => {
@@ -309,7 +315,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const steps = [
       ['waveform', 'Cerrando la grabación'],
       ['signature', 'Firma en tu celular'],
-      ['fileArrowUp', bulletin ? 'Subiendo a Bulletin' : 'Preparando el recibo'],
+      ['fileArrowUp', bulletin ? 'Subiendo a Bulletin (hasta 1 min)' : 'Preparando el recibo'],
     ] as const;
     const draw = (at: number, error?: string) => {
       box.innerHTML = `
@@ -318,15 +324,25 @@ export function renderPresenter(root: HTMLElement): Cleanup {
             ${i < at ? icon('checkCircle') : i === at && !error ? icon('circleNotch', 'spin') : icon(ic)}${label}</div>`).join('')}
         </div>
         ${error ? `<div class="error-box" style="margin-top:14px">${icon('warningCircle')}${esc(error)}</div>
-          <button class="btn primary block" id="retry" style="margin-top:12px">Reintentar</button>` : ''}`;
+          <button class="btn primary block" id="retry" style="margin-top:12px">${signed ? 'Reintentar subida' : 'Reintentar'}</button>
+          ${signed ? `<button class="btn ghost block" id="skip" style="margin-top:8px">${icon('downloadSimple')}Seguir sin Bulletin</button>` : ''}` : ''}`;
       box.querySelector('#retry')?.addEventListener('click', () => seal(box));
+      box.querySelector('#skip')?.addEventListener('click', () => {
+        clearDraft();
+        setLocalArtifact(signed!.artifact, signed!.cid);
+        sealed(box, signed!.artifact, signed!.cid, false);
+      });
     };
 
-    let step = 0;
+    let step = signed ? 2 : 0;
     try {
+      if (signed) return await upload(box, draw, bulletin);
       draw(step);
-      const audio = await sealAudio();
-      stopStt();
+      if (audioSeal === undefined) {
+        audioSeal = await sealAudio();
+        stopStt();
+      }
+      const audio = audioSeal;
 
       draw(++step);
       // Remache de cierre: las últimas frases también quedan entre dos bloques.
@@ -358,16 +374,25 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       const sig = await signBytes(canonicalBytes(unsigned as unknown as Record<string, unknown>));
       const artifact: Artifact = { ...unsigned, pubkey: sp.pubkey, sig, sig_alg: 'sr25519' };
       const bytes = new TextEncoder().encode(JSON.stringify(artifact));
-      const cid = cidForBytes(bytes);
-
-      draw(++step);
-      if (bulletin) await uploadArtifact(bytes);
-      clearDraft();
-      setLocalArtifact(artifact, cid);
-      await sealed(box, artifact, cid, bulletin);
+      signed = { artifact, bytes, cid: cidForBytes(bytes) };
+      saveDraft(draft);
+      await upload(box, draw, bulletin);
     } catch (e) {
       draw(step, (e as Error).message);
     }
+  }
+
+  async function upload(box: HTMLElement, draw: (at: number, error?: string) => void, bulletin: boolean) {
+    const { artifact, bytes, cid } = signed!;
+    draw(2);
+    try {
+      if (bulletin) await uploadArtifact(bytes);
+    } catch (e) {
+      return draw(2, `La charla está firmada, pero no se subió: ${(e as Error).message}`);
+    }
+    clearDraft();
+    setLocalArtifact(artifact, cid);
+    await sealed(box, artifact, cid, bulletin);
   }
 
   async function sealed(box: HTMLElement, artifact: Artifact, cid: string, onBulletin: boolean) {

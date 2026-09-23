@@ -55,13 +55,9 @@ export async function subscribeFinalized(
   return () => sub.unsubscribe();
 }
 
-/**
- * Hash canónico de un bloque por altura. Prueba el método nuevo (archive) y
- * cae al legacy; algunos providers solo exponen uno de los dos.
- * Devuelve null si ninguno responde: eso es "no verificable", no "falso".
- */
-export async function hashAtHeight(n: number): Promise<string | null> {
-  const client = await getClient();
+let publicClient: PolkadotClient | null = null;
+
+export async function hashVia(client: PolkadotClient, n: number): Promise<string | null> {
   try {
     const r = await withTimeout(client._request<string[] | string | null>('archive_v1_hashByHeight', [n]), HOST_QUERY_MS);
     if (r !== TIMED_OUT) {
@@ -74,4 +70,19 @@ export async function hashAtHeight(n: number): Promise<string | null> {
     if (r !== TIMED_OUT && r) return r;
   } catch { /* sin método disponible */ }
   return null;
+}
+
+/**
+ * Hash canónico de un bloque por altura. Devuelve null si nadie responde: eso
+ * es "no verificable", no "falso".
+ *
+ * El provider del host es un cliente ligero y puede no servir consultas
+ * históricas; en ese caso se pregunta a un RPC público (permiso Remote pedido
+ * al arrancar, ver permissions.ts).
+ */
+export async function hashAtHeight(n: number): Promise<string | null> {
+  const h = await hashVia(await getClient(), n).catch(() => null);
+  if (h || !isInsideContainerSync()) return h;
+  publicClient ??= createClient(getWsProvider(PUBLIC_WS));
+  return hashVia(publicClient, n);
 }

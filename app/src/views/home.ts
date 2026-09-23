@@ -19,6 +19,7 @@ export function renderHome(root: HTMLElement): Cleanup {
           <span>${icon('signature')}Firmas</span>
           <span>${icon('qrCode')}Cualquiera verifica</span>
         </div>
+        <a class="faint" href="#/diagnostico" style="display:inline-block;margin-top:28px;font-size:13px">Diagnóstico del dispositivo</a>
       </section>
       <aside class="card ticker" aria-live="polite">
         <div class="ticker-head">

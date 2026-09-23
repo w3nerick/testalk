@@ -17,5 +17,6 @@ npm run deploy     # pad dist testalk.dot (ver ../docs/deploy.md)
 | `#/presentar` | Preparación, transcripción en vivo y sellado |
 | `#/verificar` | Verificar un JSON o pegar un CID |
 | `#/<CID>` | Verificar un recibo publicado en Bulletin (destino del QR) |
+| `#/diagnostico` | Prueba cada pieza de la plataforma en el dispositivo |
 
 Arquitectura en [`../docs/architecture.md`](../docs/architecture.md).

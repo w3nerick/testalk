@@ -213,8 +213,8 @@ Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
 
 Después abre **`testalk.dot/#/diagnostico`** en Polkadot Desktop y en el
 celular. Prueba cada pieza de la plataforma desde el dispositivo (canal con el
-host, permisos de red, bloques, consulta histórica, transcriptor, firma y
-Bulletin) y deja un reporte copiable.
+host, permisos de red, micrófono, WebGPU, bloques, consulta histórica,
+transcriptor, firma y Bulletin) y deja un reporte copiable.
 Guía completa, reglas de dominios DotNS y checklist para el día del evento en
 [`docs/deploy.md`](docs/deploy.md).
 
@@ -233,6 +233,7 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [ ] Anclar `hash(recibo) + firma` en un contrato de Asset Hub (Bulletin borra a los 14 días)
 - [ ] Verificar en People chain que el username declarado sea dueño de la llave
 - [ ] Comparar un WAV contra la huella desde el verificador
+- [ ] Grabar y transcribir **dentro de la app** (permiso `Microphone` + Whisper con WebGPU), sin el script de Python. El diagnóstico ya mide si el dispositivo lo permite
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin
 
 ## Créditos

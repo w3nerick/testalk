@@ -3,7 +3,7 @@
  * y deja un reporte copiable. Idea tomada de chirp (TWR.DOT): medir en el
  * dispositivo antes de culpar al host o de confiar en un valor de retorno.
  */
-import { isInsideContainerSync, requestPermission } from '@parity/product-sdk-host';
+import { isInsideContainerSync, requestDevicePermission, requestPermission } from '@parity/product-sdk-host';
 import { cryptoWaitReady, signatureVerify } from '@polkadot/util-crypto';
 import { hexToU8a } from '@polkadot/util';
 import { icon } from '../lib/icons';
@@ -39,7 +39,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
           <button class="btn primary" id="run">${icon('play')}Probar</button>
           <button class="btn" id="run-bulletin">${icon('fileArrowUp')}Probar con subida a Bulletin</button>
         </div>
-        <p class="faint" style="font-size:13px;margin:0">La prueba con subida pide una firma y escribe ~60 bytes en Bulletin (tarda hasta 1 min).</p>
+        <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda hasta 1 min).</p>
       </section>
       <section class="card checks" id="out"><div class="chk wait">${icon('question')}<b>Sin ejecutar</b><p>Pulsa Probar.</p></div></section>
       <div class="actions"><button class="btn" id="copy" disabled>${icon('copy')}Copiar reporte</button></div>
@@ -84,6 +84,23 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
       });
     }
 
+    if (inside) {
+      await step('Micrófono: permiso del host', async () => {
+        const r = await withTimeout(requestDevicePermission('Microphone'), 30_000);
+        if (r === TIMED_OUT) return ['no', 'el host no respondió'];
+        if (!r.ok) return ['no', describeError(r.error)];
+        return r.value ? ['yes', 'concedido'] : ['no', 'denegado'];
+      });
+    }
+    await step('Micrófono: grabando 4 s, habla ahora', () => recordProbe());
+    await step('Aceleración para Whisper en la app', async () => {
+      const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+      const adapter = gpu ? await gpu.requestAdapter().catch(() => null) : null;
+      return adapter
+        ? ['yes', 'WebGPU disponible: la transcripción dentro de la app sería fluida']
+        : ['skip', 'Sin WebGPU: Whisper correría en CPU (WASM), más lento'];
+    });
+
     let first: Block | null = null;
     await step('Asset Hub: bloque finalizado', async () => {
       first = await new Promise<Block | null>(resolve => {
@@ -125,7 +142,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         try {
           ws = new WebSocket(STT_URL);
           ws.onopen = () => { clearTimeout(t); ws.close(); resolve(['yes', `${STT_URL} abierto`]); };
-          ws.onerror = () => { clearTimeout(t); resolve(['no', 'conexión rechazada o bloqueada por el contenedor']); };
+          ws.onerror = () => { clearTimeout(t); resolve(['no', 'no conecta: ¿está corriendo stt/testalk_stt.py? Dentro del contenedor también puede ser un bloqueo de red']); };
         } catch (e) {
           clearTimeout(t);
           resolve(['no', String(e)]);
@@ -180,4 +197,57 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
   });
 
   return () => { dead = true; };
+}
+
+/**
+ * Graba 4 s con getUserMedia + MediaRecorder y mide el nivel. Dice tres cosas:
+ * si el contenedor entrega el micrófono, en qué formato graba y si se oyó algo.
+ */
+async function recordProbe(): Promise<[Status, string]> {
+  if (!navigator.mediaDevices?.getUserMedia) return ['no', 'getUserMedia no existe en este contenedor'];
+  const got = await withTimeout(
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false } }),
+    30_000,
+  );
+  if (got === TIMED_OUT) return ['no', 'el contenedor no entregó el micrófono en 30 s'];
+  const stream = got;
+  const ctx = new AudioContext();
+  const an = ctx.createAnalyser();
+  an.fftSize = 2048;
+  ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize);
+  let peak = 0;
+  const meter = setInterval(() => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    peak = Math.max(peak, Math.sqrt(sum / buf.length));
+  }, 100);
+
+  let bytes = 0;
+  let mime = '';
+  try {
+    if (typeof MediaRecorder === 'undefined') {
+      await new Promise(r => setTimeout(r, 4000));
+    } else {
+      const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(t => MediaRecorder.isTypeSupported?.(t));
+      const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      rec.ondataavailable = e => { bytes += e.data.size; };
+      const stopped = new Promise(r => { rec.onstop = r; });
+      rec.start(1000);
+      await new Promise(r => setTimeout(r, 4000));
+      rec.stop();
+      await stopped;
+      mime = rec.mimeType;
+    }
+  } finally {
+    clearInterval(meter);
+    stream.getTracks().forEach(t => t.stop());
+    ctx.close().catch(() => undefined);
+  }
+
+  const dbfs = peak > 0 ? Math.round(20 * Math.log10(peak)) : -Infinity;
+  const level = `pico ${Number.isFinite(dbfs) ? dbfs : '-∞'} dBFS${peak < 0.01 ? ' (casi silencio: ¿hablaste?)' : ''}`;
+  if (typeof MediaRecorder === 'undefined') return ['skip', `audio llega (${level}) pero no hay MediaRecorder`];
+  return bytes > 0 ? ['yes', `${mime || 'formato por defecto'}, ${Math.round(bytes / 1024)} KB, ${level}`] : ['no', `no se grabaron datos (${level})`];
 }

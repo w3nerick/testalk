@@ -1,0 +1,6 @@
+faster-whisper>=1.0
+sounddevice>=0.4
+soundfile>=0.12
+numpy>=1.26
+webrtcvad-wheels>=2.0.14
+websockets>=12

@@ -1,0 +1,9 @@
+node_modules
+dist
+dist.car
+stt/.venv
+stt/grabaciones
+*.wav
+*.jsonl
+.DS_Store
+__pycache__

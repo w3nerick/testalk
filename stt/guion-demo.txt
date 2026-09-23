@@ -1,0 +1,10 @@
+Buenas tardes a todos, gracias por estar aquí en la UANL.
+Hoy les quiero mostrar cómo firmar lo que decimos con Polkadot.
+Mientras hablo, esta app transcribe cada frase en tiempo real.
+Entre frase y frase se clava el hash de un bloque real de Asset Hub.
+Nadie puede calcular ese hash antes de que exista el bloque.
+Así que este texto no pudo escribirse antes de que yo lo dijera.
+Al terminar, firmo todo con mi wallet desde el celular.
+El recibo se sube a Bulletin y aparece un código QR.
+Ustedes lo escanean con Polkadot App y verifican la firma y los bloques.
+Si alguien cambia una sola palabra, la firma deja de ser válida.

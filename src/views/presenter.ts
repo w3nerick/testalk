@@ -1,0 +1,407 @@
+import QRCode from 'qrcode';
+import { icon } from '../lib/icons';
+import { ASSET_HUB_GENESIS, NETWORK, subscribeFinalized, type Block } from '../lib/chain';
+import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
+import { connectSpeaker, currentSpeaker, signBytes, APP_DOTNS } from '../lib/signer';
+import { canUseBulletin, uploadArtifact } from '../lib/bulletin';
+import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
+import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
+import { setLocalArtifact } from './verifier';
+
+const DRAFT_KEY = 'testalk-draft';
+
+interface Draft {
+  title: string;
+  venue: string;
+  lang: string;
+  startedAt: string | null;
+  chain: ChainEntry[];
+}
+
+function loadDraft(): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null') as Draft | null;
+    return d?.chain?.length ? d : null;
+  } catch {
+    return null;
+  }
+}
+function saveDraft(d: Draft) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* sin almacenamiento: seguimos en memoria */ }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* nada */ }
+}
+
+export function renderPresenter(root: HTMLElement): Cleanup {
+  const cleanups: Cleanup[] = [];
+  let sttStatus: SttStatus = 'off';
+  let latest: Block | null = null;
+  let recent: Block[] = [];
+  const draft: Draft = { title: '', venue: '', lang: 'es', startedAt: null, chain: [] };
+  let awaitingBlock = false;
+
+  // El transcriptor se conecta desde la pantalla de preparación: así se ve si
+  // está vivo antes de empezar.
+  const sttListeners = new Set<(s: SttStatus) => void>();
+  const sentenceListeners = new Set<(t: string) => void>();
+  startStt({
+    onStatus: s => { sttStatus = s; sttListeners.forEach(f => f(s)); },
+    onSentence: t => sentenceListeners.forEach(f => f(t)),
+  });
+  cleanups.push(stopStt);
+
+  // Bloques desde ya: el primer ancla necesita un bloque previo a la primera frase.
+  const blockListeners = new Set<(b: Block) => void>();
+  const chainStatus = new Set<() => void>();
+  let chainError = '';
+  subscribeFinalized(
+    b => {
+      if (latest?.hash === b.hash) return;
+      latest = b;
+      recent = [b, ...recent].slice(0, 4);
+      blockListeners.forEach(f => f(b));
+      chainStatus.forEach(f => f());
+    },
+    e => { chainError = String(e); chainStatus.forEach(f => f()); },
+  )
+    .then(u => cleanups.push(u))
+    .catch(e => { chainError = (e as Error).message; chainStatus.forEach(f => f()); });
+
+  function setup() {
+    const saved = loadDraft();
+    const sp = currentSpeaker();
+    root.innerHTML = `
+      ${topbar()}
+      <main class="shell" style="padding:40px 0 64px">
+        <section class="card setup">
+          <div>
+            <h2>Prepara tu charla</h2>
+            <p class="muted" style="margin:8px 0 0">Estos datos quedan dentro del recibo firmado.</p>
+          </div>
+          <div class="field">
+            <label for="title">Título</label>
+            <input class="input" id="title" maxlength="140" placeholder="Cómo construir en Polkadot" value="${esc(saved?.title ?? '')}" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="venue">Evento</label>
+              <input class="input" id="venue" maxlength="100" placeholder="UANL, Monterrey" value="${esc(saved?.venue ?? '')}" />
+            </div>
+            <div class="field">
+              <label for="lang">Idioma</label>
+              <select class="input" id="lang">
+                <option value="es">Español</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+          <div class="check-row" id="wallet-row"></div>
+          <div class="check-row" id="stt-row"></div>
+          <div class="check-row" id="chain-row"></div>
+          <div id="err"></div>
+          <button class="btn primary big block" id="start">${icon('play')}Empezar charla</button>
+          ${saved ? `<button class="btn ghost block" id="resume">${icon('arrowRight')}Recuperar charla sin sellar (${saved.chain.filter(e => 's' in e).length} frases)</button>` : ''}
+        </section>
+      </main>`;
+
+    const walletRow = root.querySelector<HTMLElement>('#wallet-row')!;
+    const sttRow = root.querySelector<HTMLElement>('#stt-row')!;
+    const chainRow = root.querySelector<HTMLElement>('#chain-row')!;
+    const err = root.querySelector<HTMLElement>('#err')!;
+    const start = root.querySelector<HTMLButtonElement>('#start')!;
+    (root.querySelector('#lang') as HTMLSelectElement).value = saved?.lang ?? 'es';
+
+    const drawWallet = (s = currentSpeaker()) => {
+      walletRow.className = `check-row ${s ? 'ok' : ''}`;
+      walletRow.innerHTML = s
+        ? `${icon('checkCircle')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
+             <div class="muted mono" style="font-size:12.5px">${s.rehearsal ? 'Ensayo: cuenta de prueba, fuera de Polkadot App' : esc(shortAddr(s.address))}</div></div>`
+        : `${icon('signature')}<div class="grow">Wallet del speaker<div class="muted" style="font-size:13px">Firma el recibo al final</div></div>
+           <button class="btn sm primary" id="connect">Conectar</button>`;
+      start.disabled = !s;
+      walletRow.querySelector('#connect')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        b.innerHTML = `${icon('circleNotch', 'spin')}Abriendo`;
+        err.innerHTML = '';
+        try {
+          drawWallet(await connectSpeaker());
+        } catch (e) {
+          err.innerHTML = `<div class="error-box">${icon('warningCircle')}${esc((e as Error).message)}</div>`;
+          drawWallet(null);
+        }
+      });
+    };
+    const drawStt = (s: SttStatus) => {
+      sttRow.className = `check-row ${s === 'on' ? 'ok' : ''}`;
+      sttRow.innerHTML =
+        s === 'on'
+          ? `${icon('checkCircle')}<div class="grow">Transcriptor conectado<div class="muted" style="font-size:13px">Escuchando el micrófono</div></div>`
+          : `${icon('microphoneSlash')}<div class="grow">Transcriptor apagado
+               <div><code>python stt/testalk_stt.py --language ${esc((root.querySelector('#lang') as HTMLSelectElement)?.value ?? 'es')}</code></div>
+               <div class="muted" style="font-size:13px">Opcional: también puedes escribir frases a mano.</div></div>`;
+    };
+    const drawChain = () => {
+      chainRow.className = `check-row ${latest ? 'ok' : ''}`;
+      chainRow.innerHTML = latest
+        ? `${icon('checkCircle')}<div class="grow">Asset Hub conectado<div class="muted mono" style="font-size:12.5px">bloque #${latest.number.toLocaleString('en-US')}</div></div>`
+        : chainError
+          ? `${icon('warningCircle')}<div class="grow">Sin conexión a la red<div class="muted" style="font-size:13px">${esc(chainError)}</div></div>`
+          : `${icon('circleNotch', 'spin')}<div class="grow">Conectando a Asset Hub…</div>`;
+    };
+    drawWallet(sp);
+    drawStt(sttStatus);
+    drawChain();
+    sttListeners.add(drawStt);
+    chainStatus.add(drawChain);
+    root.querySelector('#lang')!.addEventListener('change', () => drawStt(sttStatus));
+
+    const go = (resume: boolean) => {
+      sttListeners.delete(drawStt);
+      chainStatus.delete(drawChain);
+      draft.title = (root.querySelector('#title') as HTMLInputElement).value.trim() || 'Charla sin título';
+      draft.venue = (root.querySelector('#venue') as HTMLInputElement).value.trim();
+      draft.lang = (root.querySelector('#lang') as HTMLSelectElement).value;
+      if (resume && saved) {
+        draft.chain = saved.chain;
+        draft.startedAt = saved.startedAt;
+      }
+      live();
+    };
+    start.addEventListener('click', () => {
+      if (!latest) {
+        err.innerHTML = `<div class="error-box">${icon('warningCircle')}Espera a que conecte Asset Hub: sin bloques no hay ancla.</div>`;
+        return;
+      }
+      clearDraft();
+      go(false);
+    });
+    root.querySelector('#resume')?.addEventListener('click', () => (currentSpeaker() ? go(true) : toast('Conecta tu wallet primero')));
+  }
+
+  function live() {
+    root.innerHTML = `
+      ${topbar(`<span class="talk-title">${esc(draft.title)}</span>`)}
+      <main class="shell stage">
+        <section class="card transcript"><div class="lines" id="lines"></div></section>
+        <aside class="side">
+          <div class="card" style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="pill" id="stt-pill"></span>
+            <span class="pill live" id="blk-pill">${icon('cube')}<span class="mono" id="blk-n">…</span></span>
+          </div>
+          <div class="card stats">
+            <div class="stat"><b id="st-time">0:00</b><span>duración</span></div>
+            <div class="stat"><b id="st-s">0</b><span>frases</span></div>
+            <div class="stat"><b id="st-b">0</b><span>bloques</span></div>
+          </div>
+          <div class="card" id="seal-box">
+            <button class="btn primary big block" id="seal">${icon('signature')}Sellar charla</button>
+            <p class="faint" style="font-size:13px;margin:12px 0 0">Detiene la transcripción, firma con tu wallet y genera el QR.</p>
+          </div>
+          <div class="card">
+            <h3>Añadir frase a mano</h3>
+            <form class="manual" id="manual">
+              <input class="input" id="manual-in" maxlength="400" placeholder="Si el micrófono falla" aria-label="Frase" />
+              <button class="btn sm" type="submit">${icon('pencilSimple')}</button>
+            </form>
+          </div>
+        </aside>
+      </main>`;
+
+    const lines = root.querySelector<HTMLElement>('#lines')!;
+    const sttPill = root.querySelector<HTMLElement>('#stt-pill')!;
+    const blkN = root.querySelector<HTMLElement>('#blk-n')!;
+    const stS = root.querySelector<HTMLElement>('#st-s')!;
+    const stB = root.querySelector<HTMLElement>('#st-b')!;
+    const stTime = root.querySelector<HTMLElement>('#st-time')!;
+
+    const trim = () => { while (lines.children.length > 14) lines.firstElementChild!.remove(); };
+    const addRivet = (e: Extract<ChainEntry, { full: string }>) => {
+      const el = document.createElement('span');
+      el.className = 'rivet';
+      el.innerHTML = `${icon('cube')}#${esc(e.blk)} · ${esc(e.h)}`;
+      lines.append(el);
+      trim();
+    };
+    const addLine = (text: string) => {
+      lines.querySelector('.current')?.classList.remove('current');
+      const el = document.createElement('p');
+      el.className = 'line current';
+      el.textContent = text;
+      lines.append(el);
+      trim();
+    };
+    const counts = () => {
+      stS.textContent = String(draft.chain.filter(e => 's' in e).length);
+      stB.textContent = String(draft.chain.filter(e => 'full' in e).length);
+    };
+
+    if (draft.chain.length) {
+      for (const e of draft.chain.slice(-14)) ('s' in e ? addLine(e.s) : addRivet(e));
+    } else {
+      lines.innerHTML = `<div class="empty-stage"><strong>Empieza a hablar.</strong>
+        Cada frase aparece aquí y entre frases se clava un bloque de Polkadot.</div>`;
+    }
+    counts();
+
+    const onSentence = (text: string) => {
+      lines.querySelector('.empty-stage')?.remove();
+      if (draft.chain.length === 0 && latest) {
+        // Ancla de cabeza: la charla no pudo existir antes de este bloque.
+        const e = blockEntry(latest) as Extract<ChainEntry, { full: string }>;
+        draft.chain.push(e);
+        addRivet(e);
+      }
+      draft.startedAt ??= new Date().toISOString();
+      draft.chain.push({ s: text });
+      awaitingBlock = true;
+      addLine(text);
+      counts();
+      saveDraft(draft);
+    };
+    const onBlock = (b: Block) => {
+      blkN.textContent = `#${b.number.toLocaleString('en-US')}`;
+      // Solo un bloque por tramo hablado: los silencios no inflan el recibo.
+      if (!awaitingBlock) return;
+      awaitingBlock = false;
+      const e = blockEntry(b) as Extract<ChainEntry, { full: string }>;
+      draft.chain.push(e);
+      addRivet(e);
+      counts();
+      saveDraft(draft);
+    };
+    const drawStt = (s: SttStatus) => {
+      sttPill.className = `pill ${s === 'on' ? 'on' : 'off'}`;
+      sttPill.innerHTML = s === 'on' ? `${icon('microphone')}escuchando` : `${icon('microphoneSlash')}sin transcriptor`;
+    };
+    drawStt(sttStatus);
+    if (latest) blkN.textContent = `#${latest.number.toLocaleString('en-US')}`;
+    sentenceListeners.add(onSentence);
+    blockListeners.add(onBlock);
+    sttListeners.add(drawStt);
+
+    const timer = setInterval(() => {
+      if (draft.startedAt) stTime.textContent = fmtDuration(Date.now() - Date.parse(draft.startedAt));
+    }, 1000);
+    cleanups.push(() => clearInterval(timer));
+
+    root.querySelector('#manual')!.addEventListener('submit', ev => {
+      ev.preventDefault();
+      const inp = root.querySelector<HTMLInputElement>('#manual-in')!;
+      const t = inp.value.trim();
+      if (t) onSentence(t);
+      inp.value = '';
+    });
+
+    root.querySelector('#seal')!.addEventListener('click', () => {
+      if (!draft.chain.some(e => 's' in e)) return toast('Todavía no hay nada que sellar');
+      sentenceListeners.delete(onSentence);
+      blockListeners.delete(onBlock);
+      clearInterval(timer);
+      seal(root.querySelector<HTMLElement>('#seal-box')!);
+    });
+  }
+
+  async function seal(box: HTMLElement) {
+    const sp = currentSpeaker()!;
+    const bulletin = canUseBulletin() && !sp.rehearsal;
+    const steps = [
+      ['waveform', 'Cerrando la grabación'],
+      ['signature', 'Firma en tu celular'],
+      ['fileArrowUp', bulletin ? 'Subiendo a Bulletin' : 'Preparando el recibo'],
+    ] as const;
+    const draw = (at: number, error?: string) => {
+      box.innerHTML = `
+        <div class="progress-steps">
+          ${steps.map(([ic, label], i) => `<div class="${i < at ? 'done' : i === at ? 'doing' : ''}">
+            ${i < at ? icon('checkCircle') : i === at && !error ? icon('circleNotch', 'spin') : icon(ic)}${label}</div>`).join('')}
+        </div>
+        ${error ? `<div class="error-box" style="margin-top:14px">${icon('warningCircle')}${esc(error)}</div>
+          <button class="btn primary block" id="retry" style="margin-top:12px">Reintentar</button>` : ''}`;
+      box.querySelector('#retry')?.addEventListener('click', () => seal(box));
+    };
+
+    let step = 0;
+    try {
+      draw(step);
+      const audio = await sealAudio();
+      stopStt();
+
+      draw(++step);
+      // Remache de cierre: las últimas frases también quedan entre dos bloques.
+      const last = [...draft.chain].reverse().find(e => 'full' in e) as { full: string } | undefined;
+      if (awaitingBlock && latest && latest.hash !== last?.full) draft.chain.push(blockEntry(latest));
+      const endedAt = new Date().toISOString();
+      const started = draft.startedAt ?? endedAt;
+      const hm = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
+      const unsigned: UnsignedArtifact & { rehearsal?: true } = {
+        v: 1,
+        speaker: sp.username ?? shortAddr(sp.address),
+        dotns: sp.username ?? '',
+        title: draft.title,
+        venue: draft.venue,
+        started_at: started,
+        ended_at: endedAt,
+        window: `${hm(started)}-${hm(endedAt)}`,
+        anchor_block: latest ? latest.number.toLocaleString('en-US') : '',
+        total_sentences: draft.chain.filter(e => 's' in e).length,
+        total_blocks: draft.chain.filter(e => 'full' in e).length,
+        chain: draft.chain,
+        network: NETWORK,
+        genesis: ASSET_HUB_GENESIS,
+        lang: draft.lang,
+        speaker_address: sp.address,
+        audio,
+        ...(sp.rehearsal ? { rehearsal: true as const } : {}),
+      };
+      const sig = await signBytes(canonicalBytes(unsigned as unknown as Record<string, unknown>));
+      const artifact: Artifact = { ...unsigned, pubkey: sp.pubkey, sig, sig_alg: 'sr25519' };
+      const bytes = new TextEncoder().encode(JSON.stringify(artifact));
+      const cid = cidForBytes(bytes);
+
+      draw(++step);
+      if (bulletin) await uploadArtifact(bytes);
+      clearDraft();
+      setLocalArtifact(artifact, cid);
+      await sealed(box, artifact, cid, bulletin);
+    } catch (e) {
+      draw(step, (e as Error).message);
+    }
+  }
+
+  async function sealed(box: HTMLElement, artifact: Artifact, cid: string, onBulletin: boolean) {
+    const url = `https://${APP_DOTNS}/#/${cid}`;
+    const qr = await QRCode.toDataURL(url, { margin: 1, width: 720, errorCorrectionLevel: 'M', color: { dark: '#0d0d10', light: '#ffffff' } });
+    box.innerHTML = `
+      <div class="sealed">
+        <span class="pill on">${icon('sealCheck')}Charla sellada</span>
+        ${onBulletin
+          ? `<div class="qr"><img src="${qr}" alt="QR para verificar esta charla" /></div>
+             <p class="muted" style="margin:0;font-size:14px">Escanéalo con Polkadot App para verificar.</p>`
+          : `<p class="muted" style="margin:0;font-size:14px">Ensayo: el recibo no se subió a Bulletin. Descárgalo o ábrelo en el verificador.</p>`}
+        <div class="cid">${esc(cid)}</div>
+        <div class="actions" style="justify-content:center">
+          <a class="btn sm" href="#/verificar">${icon('shieldCheck')}Verificar</a>
+          <button class="btn sm" id="dl">${icon('downloadSimple')}JSON</button>
+          ${onBulletin ? `<button class="btn sm" id="cp">${icon('copy')}Enlace</button>` : ''}
+        </div>
+      </div>`;
+    box.querySelector('#dl')!.addEventListener('click', () => downloadJson(artifact, cid));
+    box.querySelector('#cp')?.addEventListener('click', () => navigator.clipboard?.writeText(url).then(() => toast('Enlace copiado'), () => toast(url)));
+  }
+
+  setup();
+  return () => cleanups.forEach(f => { try { f(); } catch { /* ya cerrado */ } });
+}
+
+export function downloadJson(a: Artifact, cid: string) {
+  // Compacto a propósito: son los mismos bytes que se subieron, así el CID del archivo coincide.
+  const blob = new Blob([JSON.stringify(a)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `testalk-${cid.slice(-10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+

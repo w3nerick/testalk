@@ -1,0 +1,30 @@
+{
+  "name": "testalk",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && PAD_ENV=devnet pad dist testalk.dot"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@noble/hashes": "^1.8.0",
+    "@parity/product-sdk-host": "0.21.0",
+    "@parity/product-sdk-signer": "0.14.6",
+    "@phosphor-icons/core": "^2.1.1",
+    "@polkadot/util": "^13.5.4",
+    "@polkadot/util-crypto": "^13.5.4",
+    "multiformats": "^13.3.7",
+    "polkadot-api": "~2.2.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.0"
+  }
+}

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && PAD_ENV=devnet pad dist testalk.dot"
+    "deploy": "npm run build && PAD_ENV=devnet pad dist testalk.dot",
+    "verify": "node scripts/verify.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

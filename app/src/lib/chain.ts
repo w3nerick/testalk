@@ -2,25 +2,16 @@
  * Conexión a Asset Hub del Products Devnet.
  *
  * Dentro del contenedor (Polkadot App / Desktop) todo pasa por el host con
- * `getHostProvider(genesis)`. Fuera — el navegador normal, útil para ensayar —
- * se abre un WebSocket público directo.
- *
- * Genesis medido por RPC el 23 sep 2026. Los de Karim (0xf388dc…) eran de la
- * red del Summit y aquí no existen.
+ * `getHostProvider(genesis)`. Fuera, en un navegador normal (útil para
+ * ensayar), se abre un WebSocket público directo.
  */
 import { createClient, type PolkadotClient } from 'polkadot-api';
 import { getWsProvider } from 'polkadot-api/ws';
-import { getHostProvider, isInsideContainerSync, type HexString } from '@parity/product-sdk-host';
+import { getHostProvider, isInsideContainerSync } from '@parity/product-sdk-host';
 import { waitForHost, withTimeout, TIMED_OUT, HOST_QUERY_MS } from './host';
+import { ASSET_HUB_GENESIS, PUBLIC_WS } from './network';
 
-export const NETWORK = 'products-devnet';
-export const ASSET_HUB_GENESIS: HexString =
-  '0xd6eec26135305a8ad257a20d003357284c8aa03d0bdb2b357ab0a22371e11ef2';
-
-const PUBLIC_WS = [
-  'wss://asset-hub-paseo-rpc.n.dwellir.com',
-  'wss://sys.turboflakes.io/asset-hub-paseo',
-];
+export { ASSET_HUB_GENESIS, NETWORK } from './network';
 
 export interface Block {
   number: number;

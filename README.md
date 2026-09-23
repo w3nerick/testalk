@@ -1,64 +1,242 @@
+<div align="center">
+
+<img src="app/icon.png" width="96" alt="testalk" />
+
 # testalk
 
-Graba una charla, entrelaza cada frase con block hashes reales de Asset Hub,
-fírmala con tu wallet y publica un recibo en Bulletin. El público escanea el QR
-con Polkadot App y verifica la firma y los bloques.
+**Lo que dices, firmado y anclado a Polkadot.**
 
-Réplica para el Products Devnet del modelo **Proof of Talk** de Karim Jedda
-(Web3 Summit 2026). Mismo formato de artefacto v1: un recibo suyo se verifica
-aquí, y uno nuestro sigue su convención de firma.
+Graba una charla, entrelaza cada frase con block hashes reales de Asset Hub,
+fírmala con tu wallet y publica un recibo que cualquiera verifica con un QR.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-e6007a.svg)](LICENSE)
+![Network](https://img.shields.io/badge/red-Products%20Devnet-e6007a)
+![Signature](https://img.shields.io/badge/firma-sr25519-555)
+![Storage](https://img.shields.io/badge/storage-Bulletin-555)
+![STT](https://img.shields.io/badge/STT-faster--whisper-555)
+
+</div>
+
+<p align="center">
+  <img src="docs/img/live.png" alt="Pantalla del presentador: transcripción en vivo con bloques de Asset Hub entre frases" width="100%" />
+</p>
+
+---
+
+## Contenido
+
+- [Qué es](#qué-es)
+- [Cómo funciona](#cómo-funciona)
+- [Qué prueba y qué no](#qué-prueba-y-qué-no)
+- [Basado en Proof of Talk](#basado-en-proof-of-talk)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Inicio rápido](#inicio-rápido)
+- [Deploy en Products Devnet](#deploy-en-products-devnet)
+- [Estado y roadmap](#estado-y-roadmap)
+- [Créditos](#créditos)
+
+## Qué es
+
+En un internet lleno de voces y videos sintéticos, **testalk** hace que la
+atribución de una charla sea verificable sin depender de nadie:
+
+1. **Hablas.** Un transcriptor local (Whisper) convierte cada frase en texto.
+2. **Se ancla.** Entre frase y frase se inserta el hash de un bloque finalizado de Asset Hub. Nadie puede conocer ese hash antes de que el bloque exista.
+3. **Firmas.** Al terminar, firmas el recibo completo con tu wallet de Polkadot App (sr25519).
+4. **Cualquiera verifica.** El recibo se sube a Bulletin y aparece un QR. Quien lo escanea con Polkadot App comprueba la firma y consulta cada bloque en la cadena.
+
+Si alguien cambia una sola palabra, la firma deja de ser válida. Si alguien
+inventa un bloque, la cadena lo desmiente.
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/img/mobile-verified.png" alt="Recibo verificado en el celular" /></td>
+    <td width="33%"><img src="docs/img/mobile-tampered.png" alt="Recibo alterado detectado" /></td>
+    <td width="33%"><img src="docs/img/mobile-light.png" alt="Verificador en modo claro" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Recibo verificado</sub></td>
+    <td align="center"><sub>Una palabra cambiada: firma inválida</sub></td>
+    <td align="center"><sub>Modo claro</sub></td>
+  </tr>
+</table>
+
+## Cómo funciona
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as Micrófono
+    participant S as stt/ (Whisper local)
+    participant A as app/ (testalk.dot)
+    participant H as Asset Hub
+    participant W as Polkadot App (wallet)
+    participant B as Bulletin
+
+    H-->>A: bloque finalizado N (ancla de inicio)
+    loop durante la charla
+        M->>S: audio 16 kHz
+        S->>A: frase transcrita (ws://localhost:8787)
+        H-->>A: siguiente bloque finalizado
+        Note over A: chain = [bloque, frase, bloque, frase, ...]
+    end
+    A->>S: seal
+    S-->>A: huella blake2b-256 del WAV
+    A->>W: firmar bytes canónicos del recibo
+    W-->>A: firma sr25519
+    A->>B: subir recibo (preimage)
+    A-->>A: QR a https://testalk.dot/#/<CID>
+```
+
+Detalle de cada pieza en [`docs/architecture.md`](docs/architecture.md) y
+especificación del recibo en [`docs/receipt-format.md`](docs/receipt-format.md).
 
 ## Qué prueba y qué no
 
-| Prueba | No prueba |
+| ✅ Prueba | ❌ No prueba |
 |---|---|
-| Esta llave firmó exactamente este texto | Que la voz sea del firmante |
-| El texto no existía antes del primer bloque | Que se haya dicho en vivo (el límite "no después de" es el sellado) |
-| Los block hashes existen en Asset Hub | Que el firmante sea humano (falta Individuality) |
-| Si el speaker comparte el WAV, que es el mismo audio (huella blake2b-256) | Que el contenido sea cierto |
+| Esta llave firmó **exactamente** este texto | Que la voz sea del firmante (el audio no viaja en el recibo) |
+| El texto **no existía antes** del primer bloque | Que se haya dicho en vivo: el límite "no después de" es el momento del sellado |
+| Cada block hash **existe** en Asset Hub a esa altura | Que el firmante sea una persona única (falta Individuality) |
+| Si el speaker comparte el WAV, que es **el mismo audio** | Que lo dicho sea verdad |
 
-## Diferencias con el original
+Prueba **atribución**, no veracidad. Modelo de amenazas completo en
+[`docs/verification.md`](docs/verification.md).
 
-- Bloques **finalizados**, no `bestBlocks$`: un bloque best puede quedar huérfano y el verificador lo daría por falso.
-- El verificador **consulta cada block hash en la cadena**. El original solo revisa la firma.
-- Huella del WAV dentro del recibo firmado.
-- Remache de bloque al cerrar, para que las últimas frases también queden entre dos bloques.
-- Identidad vía `SignerManager` (en este devnet `getLegacyAccountSigner` no abre la hoja de firma).
-- QR con `https://testalk.dot/#/<cid>`, el único deep link que entra al contenedor.
+## Basado en Proof of Talk
 
-## Uso
+testalk replica para el **Polkadot Products Devnet** el modelo
+[Proof of Talk](https://code.jedda.eu/proof-of-talk/doc/tip/README.md) que
+Karim Jedda presentó en vivo en el Web3 Summit 2026
+([charla](https://www.youtube.com/watch?v=7-dSloWKDUU),
+[post](https://karimjedda.com/products-for-humans/)).
 
-```bash
-npm install
-npm run dev          # fuera de Polkadot App: modo ensayo, firma con //Alice, sin Bulletin
-npm run build
+Mantiene su formato de recibo v1 y su convención de firma: **un recibo de
+Proof of Talk se verifica en testalk**, y uno de testalk usa las mismas claves.
+Lo que cambia:
+
+| | Proof of Talk | testalk |
+|---|---|---|
+| Red | Red del Web3 Summit | Products Devnet (Asset Hub `0xd6eec2…`) |
+| Bloques | `bestBlocks$` (pueden revertirse en un reorg) | `finalizedBlock$` (no se revierten) |
+| Verificador | Solo firma | Firma **y** cada block hash consultado en la cadena |
+| Audio | WAV local, fuera del recibo | Huella blake2b-256 del WAV **dentro** del recibo firmado |
+| Cierre | Última frase sin bloque posterior | Remache de bloque al sellar |
+| Firmante | `getLegacyAccountSigner` | `SignerManager` (el que abre la hoja de firma en este devnet) |
+| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://testalk.dot/#/<cid>` |
+| Verificación sin app | No | CLI: `npm run verify` |
+| Ensayo | Requiere el host | Modo ensayo en cualquier navegador |
+
+## Estructura del repositorio
+
+```
+testalk/
+├── app/                        Interfaz web (se publica en testalk.dot)
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── artifact.ts     Formato del recibo, firma canónica, CID, verificación
+│   │   │   ├── chain.ts        Asset Hub: host provider o WebSocket público
+│   │   │   ├── network.ts      Genesis, RPCs y gateway del devnet
+│   │   │   ├── signer.ts       SignerManager (host) o cuenta de ensayo
+│   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
+│   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
+│   │   │   └── host.ts         waitForHost + timeouts para toda llamada al host
+│   │   ├── views/              Inicio, presentador y verificador
+│   │   └── style.css           Sistema visual (oscuro y claro)
+│   ├── scripts/verify.ts       Verificador por línea de comandos
+│   └── polkadot-app-deploy.config.ts
+├── stt/                        Transcriptor local (Python)
+│   ├── testalk_stt.py          Micrófono → VAD → faster-whisper → WebSocket
+│   └── guion-demo.txt          Guion para ensayar sin micrófono
+├── examples/                   Recibos de ejemplo (válido y alterado)
+└── docs/                       Arquitectura, formato, verificación y deploy
 ```
 
-Transcriptor (en la laptop del speaker):
+## Inicio rápido
+
+Requisitos: Node 22.18+ (el CLI usa type stripping nativo) y Python 3.10+.
+
+### 1. La app en modo ensayo
+
+```bash
+cd app
+npm install
+npm run dev
+```
+
+Fuera de Polkadot App la app entra en **modo ensayo**: firma con la cuenta de
+desarrollo `//Alice`, no sube a Bulletin y marca el recibo como ensayo. Sirve
+para probar todo el flujo en cualquier navegador.
+
+### 2. El transcriptor
 
 ```bash
 cd stt
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python testalk_stt.py --language es --model small   # micrófono real
-.venv/bin/python testalk_stt.py --demo guion-demo.txt          # ensayo sin micrófono
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+.venv/bin/python testalk_stt.py --demo guion-demo.txt          # sin micrófono
+.venv/bin/python testalk_stt.py --language es --model small    # micrófono real
+.venv/bin/python testalk_stt.py --list-mics                    # elegir micrófono
 ```
 
-La primera corrida descarga el modelo de Whisper (~480 MB para `small`).
-El audio se guarda siempre en `stt/grabaciones/`.
+El modo `--demo` solo necesita `websockets`. La primera corrida con micrófono
+descarga el modelo de Whisper (~480 MB para `small`). El audio se guarda
+siempre en `stt/grabaciones/`, pase lo que pase con la transcripción.
 
-## Deploy (Terminal.app, no desde Claude Code)
+### 3. Verificar sin la app
 
 ```bash
-pad login            # una vez, QR con Polkadot App
-npm run deploy       # = build + PAD_ENV=devnet pad dist testalk.dot
+cd app
+npm run verify -- ../examples/rehearsal-uanl.json   # ✓ CHARLA VERIFICADA (exit 0)
+npm run verify -- ../examples/tampered-uanl.json    # ✗ RECIBO NO VÁLIDO  (exit 1)
+npm run verify -- <CID>                             # lee del gateway IPFS del devnet
 ```
 
-`testalk` tiene 7 caracteres: DotNS pide personhood para nombres de 6 a 8. Si
-la cuenta no califica, usar uno de 9 o más (p. ej. `testalk26.dot`) en
-`package.json`, `polkadot-app-deploy.config.ts` y `APP_DOTNS` de `src/lib/signer.ts`.
+Para verificar el recibo original de Karim:
 
-## Pendiente
+```bash
+curl -sL https://blog.jedda.eu/bafybeiaagh44lqgz64g5ccnde454yxeqgrspl32klxafdfrj3jz55ag35i/artifact.json -o /tmp/pot.json
+npm run verify -- /tmp/pot.json   # firma válida; bloques de otra red, sin comprobar
+```
 
-- Probar en Desktop que la app alcanza `ws://localhost:8787` desde el sandbox.
-- Anclar `blake2(recibo) + firma` en un contrato de Asset Hub: Bulletin borra a los 14 días.
-- Verificar en People chain que el username declarado sea dueño de la llave.
+## Deploy en Products Devnet
+
+```bash
+cd app
+pad login          # una vez: QR con Polkadot App
+npm run deploy     # build + PAD_ENV=devnet pad dist testalk.dot
+```
+
+Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
+Guía completa, reglas de dominios DotNS y checklist para el día del evento en
+[`docs/deploy.md`](docs/deploy.md).
+
+## Estado y roadmap
+
+Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
+29 a 31 de octubre de 2026.
+
+- [x] Transcripción en vivo con bloques finalizados entrelazados
+- [x] Firma sr25519 con formato compatible con Proof of Talk v1
+- [x] Verificador web y CLI con comprobación on-chain de bloques
+- [x] Huella del audio dentro del recibo
+- [x] Flujo completo probado en modo ensayo contra el devnet real
+- [ ] Prueba en Polkadot Desktop y celular: firma, Bulletin y acceso a `localhost`
+- [ ] Anclar `hash(recibo) + firma` en un contrato de Asset Hub (Bulletin borra a los 14 días)
+- [ ] Verificar en People chain que el username declarado sea dueño de la llave
+- [ ] Comparar un WAV contra la huella desde el verificador
+- [ ] Charla de prueba de 15 minutos, sellada de principio a fin
+
+## Créditos
+
+- Modelo original, formato de recibo y convención de firma: **Proof of Talk** de
+  [Karim Jedda](https://karimjedda.com). testalk reimplementa ese diseño para
+  otra red y lo extiende.
+- Transcripción: [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+- Plataforma: Polkadot App, Bulletin, DotNS y `pad` de la Polkadot Community Foundation.
+- Íconos: [Phosphor](https://phosphoricons.com). Tipografía: [Geist](https://vercel.com/font).
+
+## Licencia
+
+[MIT](LICENSE)

@@ -1,5 +1,6 @@
 import { icon, type IconName } from '../lib/icons';
-import { ASSET_HUB_GENESIS, hashAtHeight } from '../lib/chain';
+import { ASSET_HUB_GENESIS, hashAtHeight, withReadClient } from '../lib/chain';
+import { readSeal } from '../lib/registry';
 import {
   cidForBytes,
   preimageKeyFromCid,
@@ -160,6 +161,7 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
       <section class="card checks" id="checks">
         ${row('wait', 'Firma', 'Comprobando…')}
         ${row('wait', 'Bloques en la cadena', 'Esperando…')}
+        ${row('wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
         ${audioRow(a)}
       </section>
       <section class="card timeline">
@@ -189,6 +191,7 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
   });
 
   run(root, a);
+  sealRow(root, cid);
 }
 
 function audioRow(a: Artifact): string {
@@ -240,4 +243,20 @@ async function run(root: HTMLElement, a: Artifact) {
 function firstBlk(a: Artifact): string {
   const b = a.chain.find(e => 'full' in e) as { blk: string } | undefined;
   return b?.blk ?? '?';
+}
+
+/** Fila del registro permanente. Informativa: no cambia el veredicto. */
+async function sealRow(root: HTMLElement, cid: string) {
+  const el = () => root.querySelector<HTMLElement>('#checks')?.children[2] as HTMLElement | undefined;
+  let html: string;
+  try {
+    const seal = await withReadClient(c => readSeal(c, preimageKeyFromCid(cid)));
+    html = seal
+      ? row('ok', 'Sello permanente', `Anclado en Asset Hub en el bloque #${Number(seal.blockNumber).toLocaleString('en-US')}, el ${new Date(Number(seal.sealedAt) * 1000).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}. El recibo existía a más tardar entonces y sigue verificable aunque Bulletin lo borre.`)
+      : row('warn', 'Sin sello permanente', 'Este recibo no está en el registro de Asset Hub. Bulletin lo borra a los 14 días: guarda el JSON.');
+  } catch {
+    html = row('warn', 'Sello permanente sin comprobar', 'No se pudo consultar el registro en Asset Hub.');
+  }
+  const target = el();
+  if (target) target.outerHTML = html;
 }

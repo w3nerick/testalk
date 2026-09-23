@@ -77,6 +77,14 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | Formato v1 intacto y campos nuevos aparte | Compatibilidad con los verificadores de Proof of Talk. Los campos nuevos quedan cubiertos por la firma. |
 | Fuentes e íconos dentro del bundle | El contenedor no garantiza acceso a CDNs; la fuente de íconos completa pesaría varios MB en Bulletin, así que solo se importan los SVG usados. |
 
+### `contract/` TalkRegistry
+
+Solidity compilado a PolkaVM con `resolc` y desplegado en pallet-revive. Guarda
+por recibo su huella blake2b-256, llave, firma, CID, título, bloque ancla y el
+bloque y hora del sellado. Las lecturas (`get`, `total`, `page`) se hacen con la
+runtime API `ReviveApi.call`, sin firmar. Detalle en
+[`contract/README.md`](../contract/README.md).
+
 ## Red
 
 | Parámetro | Valor |
@@ -84,5 +92,6 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | Asset Hub genesis | `0xd6eec26135305a8ad257a20d003357284c8aa03d0bdb2b357ab0a22371e11ef2` |
 | RPC públicos | `wss://asset-hub-paseo-rpc.n.dwellir.com`, `wss://sys.turboflakes.io/asset-hub-paseo` |
 | Gateway IPFS | `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<CID>` |
+| TalkRegistry | `0xf4acbd6ae6f57ec2b117d4a0b9bb18026496b40a` (bloque 13,620,269) |
 
 Todo vive en [`app/src/lib/network.ts`](../app/src/lib/network.ts).

@@ -44,6 +44,7 @@ atribución de una charla sea verificable sin depender de nadie:
 2. **Se ancla.** Entre frase y frase se inserta el hash de un bloque finalizado de Asset Hub. Nadie puede conocer ese hash antes de que el bloque exista.
 3. **Firmas.** Al terminar, firmas el recibo completo con tu wallet de Polkadot App (sr25519).
 4. **Cualquiera verifica.** El recibo se sube a Bulletin y aparece un QR. Quien lo escanea con Polkadot App comprueba la firma y consulta cada bloque en la cadena.
+5. **Queda para siempre.** La huella y la firma se anclan en `TalkRegistry`, un contrato en pallet-revive. Bulletin borra a los 14 días; el registro no.
 
 Si alguien cambia una sola palabra, la firma deja de ser válida. Si alguien
 inventa un bloque, la cadena lo desmiente.
@@ -86,6 +87,8 @@ sequenceDiagram
     W-->>A: firma sr25519
     A->>B: subir recibo (preimage)
     A-->>A: QR a https://testalk.dot/#/<CID>
+    Note over A,H: después de la charla
+    A->>H: TalkRegistry.seal(huella, firma, ...) en pallet-revive
 ```
 
 Detalle de cada pieza en [`docs/architecture.md`](docs/architecture.md) y
@@ -96,7 +99,8 @@ especificación del recibo en [`docs/receipt-format.md`](docs/receipt-format.md)
 | ✅ Prueba | ❌ No prueba |
 |---|---|
 | Esta llave firmó **exactamente** este texto | Que la voz sea del firmante (el audio no viaja en el recibo) |
-| El texto **no existía antes** del primer bloque | Que se haya dicho en vivo: el límite "no después de" es el momento del sellado |
+| El texto **no existía antes** del primer bloque | Que se haya dicho en vivo |
+| El recibo **ya existía** en el bloque en que se ancló en `TalkRegistry` | |
 | Cada block hash **existe** en Asset Hub a esa altura | Que el firmante sea una persona única (falta Individuality) |
 | Si el speaker comparte el WAV, que es **el mismo audio** | Que lo dicho sea verdad |
 
@@ -125,6 +129,7 @@ Lo que cambia:
 | Firmante | `getLegacyAccountSigner` | `SignerManager` (el que abre la hoja de firma en este devnet) |
 | QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://testalk.dot/#/<cid>` |
 | Verificación sin app | No | CLI: `npm run verify` |
+| Permanencia | Bulletin (14 días) | Registro en pallet-revive: [`TalkRegistry`](contract/) |
 | Ensayo | Requiere el host | Modo ensayo en cualquier navegador |
 
 ## Estructura del repositorio
@@ -146,6 +151,11 @@ testalk/
 │   │   └── style.css           Sistema visual (oscuro y claro)
 │   ├── scripts/verify.ts       Verificador por línea de comandos
 │   └── polkadot-app-deploy.config.ts
+├── contract/                   TalkRegistry: Solidity → PolkaVM (resolc) en pallet-revive
+│   ├── contracts/TalkRegistry.sol
+│   ├── scripts/                deploy · anchor · check, con simulación previa
+│   ├── test/                   Pruebas de lógica en EVM local
+│   └── deployments.json        Dirección desplegada
 ├── stt/                        Transcriptor local (Python)
 │   ├── testalk_stt.py          Micrófono → VAD → faster-whisper → WebSocket
 │   └── guion-demo.txt          Guion para ensayar sin micrófono
@@ -185,7 +195,19 @@ El modo `--demo` solo necesita `websockets`. La primera corrida con micrófono
 descarga el modelo de Whisper (~480 MB para `small`). El audio se guarda
 siempre en `stt/grabaciones/`, pase lo que pase con la transcripción.
 
-### 3. Verificar sin la app
+### 3. Anclar un recibo para siempre
+
+```bash
+cd contract
+npm install
+npm run anchor -- ~/Descargas/testalk-xxxx.json   # pide semilla; firma solo si escribes SELLAR
+npm run check  -- ~/Descargas/testalk-xxxx.json   # ¿está sellado?
+```
+
+`TalkRegistry` vive en [`0xf4acbd6ae6f57ec2b117d4a0b9bb18026496b40a`](contract/deployments.json).
+Detalles en [`contract/README.md`](contract/README.md).
+
+### 4. Verificar sin la app
 
 ```bash
 cd app
@@ -230,7 +252,9 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Flujo completo probado en modo ensayo contra el devnet real
 - [x] Código alineado con el comportamiento medido del devnet ([detalle](docs/deploy.md#comportamiento-conocido-del-devnet))
 - [ ] Prueba en Polkadot Desktop y celular: firma de bytes con `SignerManager`, subida a Bulletin y acceso a `localhost`
-- [ ] Anclar `hash(recibo) + firma` en un contrato de Asset Hub (Bulletin borra a los 14 días)
+- [x] `TalkRegistry` desplegado en pallet-revive: huella, firma y cota superior de tiempo, permanentes
+- [x] Verificador web y CLI consultan el registro
+- [ ] Anclar desde la app al sellar (hoy se ancla con `npm run anchor` después de la charla)
 - [ ] Verificar en People chain que el username declarado sea dueño de la llave
 - [ ] Comparar un WAV contra la huella desde el verificador
 - [ ] Grabar y transcribir **dentro de la app** (permiso `Microphone` + Whisper con WebGPU), sin el script de Python. El diagnóstico ya mide si el dispositivo lo permite

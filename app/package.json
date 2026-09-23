@@ -21,7 +21,8 @@
     "@polkadot/util-crypto": "^13.5.4",
     "multiformats": "^13.3.7",
     "polkadot-api": "~2.2.1",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "viem": "^2.56.8"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",

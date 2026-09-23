@@ -10,7 +10,8 @@
 import { readFileSync } from 'node:fs';
 import { createClient } from 'polkadot-api';
 import { getWsProvider } from 'polkadot-api/ws';
-import { cidForBytes, verifyBlocks, verifySignature, type Artifact } from '../src/lib/artifact.ts';
+import { blake256Hex, cidForBytes, verifyBlocks, verifySignature, type Artifact } from '../src/lib/artifact.ts';
+import { readSeal } from '../src/lib/registry.ts';
 import { ASSET_HUB_GENESIS, IPFS_GATEWAY, PUBLIC_WS } from '../src/lib/network.ts';
 
 const c = {
@@ -61,6 +62,11 @@ async function main() {
   };
   const b = await verifyBlocks(a, hashAt, ASSET_HUB_GENESIS, (d, t) => process.stdout.write(c.dim(`\r  consultando ${d}/${t} bloques…`)));
   process.stdout.write('\r\x1b[K');
+  // undefined = no se pudo consultar; null = consultado y no está sellado.
+  const seal = await Promise.race([
+    readSeal(client, blake256Hex(bytes)),
+    new Promise<undefined>(r => setTimeout(() => r(undefined), 10_000)),
+  ]).catch(() => undefined);
   client.destroy();
 
   if (b.status === 'ok') console.log(c.ok(`✓ ${b.matched}/${blocks} bloques existen en Asset Hub`));
@@ -68,6 +74,9 @@ async function main() {
   else if (b.status === 'partial') console.log(c.warn(`! ${b.matched} confirmados, ${b.unknown} sin respuesta`));
   else console.log(c.warn(`! Bloques sin comprobar: ${b.reason}`));
 
+  if (seal) console.log(c.ok(`✓ Sello permanente en Asset Hub, bloque #${Number(seal.blockNumber).toLocaleString('en-US')} (${new Date(Number(seal.sealedAt) * 1000).toISOString()})`));
+  else if (seal === null) console.log(c.warn('! Sin sello permanente: Bulletin lo borra a los 14 días'));
+  else console.log(c.dim('· Registro permanente sin consultar'));
   console.log(a.audio ? c.ok(`✓ Huella del audio ${a.audio.hash.slice(0, 18)}… (${a.audio.seconds} s)`) : c.dim('· Sin huella de audio'));
 
   const valid = sig.ok && b.status !== 'fail';

@@ -11,3 +11,9 @@ export const PUBLIC_WS = [
 ];
 /** Gateway IPFS del devnet: sirve preimages de Bulletin mientras no expiren. */
 export const IPFS_GATEWAY = 'https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs';
+
+/**
+ * TalkRegistry en pallet-revive: sellos permanentes de los recibos.
+ * Desplegado el 23 sep 2026, bloque 13,620,269 (ver contract/deployments.json).
+ */
+export const REGISTRY_ADDRESS = '0xf4acbd6ae6f57ec2b117d4a0b9bb18026496b40a' as const;

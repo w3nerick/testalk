@@ -67,6 +67,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Pulsar **Sellar charla** y aprobar la firma en el celular
 - [ ] Dejar el QR en pantalla el tiempo suficiente para que escaneen
 - [ ] Descargar el JSON y guardar el WAV de `stt/grabaciones/`: Bulletin borra a los 14 días
+- [ ] Anclar el recibo ese mismo día: `cd contract && npm run anchor -- <recibo.json>`
 
 ## Comportamiento conocido del devnet
 

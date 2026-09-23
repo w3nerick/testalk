@@ -70,7 +70,7 @@ if (answer !== 'SELLAR') exit(0, 'Cancelado. No se firmó nada.');
 
 const need = sim.r.weight_required;
 const res = await api.tx.Revive.call({
-  dest: Binary.fromHex(dest),
+  dest, // [u8; 20]: texto hex en papi 2.2
   value: 0n,
   weight_limit: {
     ref_time: need.ref_time * 2n < WEIGHT_CAP.ref_time ? need.ref_time * 2n : WEIGHT_CAP.ref_time,

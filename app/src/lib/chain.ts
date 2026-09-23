@@ -86,3 +86,17 @@ export async function hashAtHeight(n: number): Promise<string | null> {
   publicClient ??= createClient(getWsProvider(PUBLIC_WS));
   return hashVia(publicClient, n);
 }
+
+/**
+ * Corre una lectura con el cliente principal y, si falla dentro del
+ * contenedor, la repite contra un RPC público.
+ */
+export async function withReadClient<T>(fn: (c: PolkadotClient) => Promise<T>): Promise<T> {
+  try {
+    return await fn(await getClient());
+  } catch (e) {
+    if (!isInsideContainerSync()) throw e;
+    publicClient ??= createClient(getWsProvider(PUBLIC_WS));
+    return fn(publicClient);
+  }
+}

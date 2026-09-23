@@ -37,7 +37,9 @@ export function registryAddress() {
   return JSON.parse(readFileSync(DEPLOYMENTS, 'utf8')).devnet?.address ?? null;
 }
 
-export const hex = v => (v?.asHex ? v.asHex() : typeof v === 'string' ? v : null);
+// En polkadot-api 2.2 los Vec<u8> llegan como Uint8Array y los [u8; N] como texto hex.
+export const hex = v =>
+  typeof v === 'string' ? v : v instanceof Uint8Array ? '0x' + Buffer.from(v).toString('hex') : v?.asHex ? v.asHex() : null;
 export const pas = planck => `${(Number(planck) / 1e10).toFixed(4)} PAS`;
 
 export function encode(functionName, args) {
@@ -70,7 +72,8 @@ export async function simulateInstantiate(api, origin = SIM_ORIGIN) {
 
 /** Simula una llamada al contrato (dry-run). Sirve para leer y para probar escrituras. */
 export async function simulateCall(api, dest, data, origin = SIM_ORIGIN) {
-  return api.apis.ReviveApi.call(origin, Binary.fromHex(dest), 0n, undefined, undefined, Binary.fromHex(data));
+  // `dest` es [u8; 20]: en papi 2.2 va como texto hex, no como Binary.
+  return api.apis.ReviveApi.call(origin, dest, 0n, undefined, undefined, Binary.fromHex(data));
 }
 
 /** Lee `get(hash)` sin firmar. Devuelve null si el recibo no está sellado. */

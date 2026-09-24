@@ -14,6 +14,14 @@ python3 -m venv .venv
 .venv/bin/python testalk_stt.py --demo guion-demo.txt      # ensayo sin micrófono
 ```
 
+Usa Python 3.10–3.13. En Mac Intel, `onnxruntime` (lo pide faster-whisper) no
+tiene rueda para 3.14 y pip acaba intentando compilar `av` viejo, que falla con
+`pkg-config is required for building PyAV`. Solución: `brew install python@3.13`
+y crear la venv con `python3.13 -m venv .venv`.
+
+Referencia (i9-8950HK, CPU, int8): `small` transcribe 4.9 s de audio en 2.0 s y
+`base` en 0.7 s. La primera pasada tras cargar el modelo es más lenta.
+
 | Opción | Por defecto | Uso |
 |---|---|---|
 | `--model` | `small` | `tiny`, `base`, `small`, `medium`, `large-v3` |

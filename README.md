@@ -200,6 +200,7 @@ siempre en `stt/grabaciones/`, pase lo que pase con la transcripción.
 ```bash
 cd contract
 npm install
+npm run sign   -- ~/Descargas/testalk-xxxx.json   # solo si es de ensayo o la app no pudo firmar
 npm run anchor -- ~/Descargas/testalk-xxxx.json   # pide semilla; firma solo si escribes SELLAR
 npm run check  -- ~/Descargas/testalk-xxxx.json   # ¿está sellado?
 ```

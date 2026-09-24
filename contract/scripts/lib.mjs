@@ -104,18 +104,21 @@ export async function promptSecret(question) {
   });
 }
 
-export async function loadSigner() {
+/** Pide la frase semilla y deriva el par sr25519 (sin ruta, como la wallet). */
+export async function loadKeypair() {
   const { sr25519CreateDerive } = await import('@polkadot-labs/hdkd');
   const { entropyToMiniSecret, mnemonicToEntropy } = await import('@polkadot-labs/hdkd-helpers');
-  const { getPolkadotSigner } = await import('polkadot-api/signer');
   if (!process.stdin.isTTY) throw new Error('Se necesita una terminal interactiva para pedir la frase semilla.');
   console.log('Pega o escribe tu frase semilla y pulsa Enter. No se mostrará nada mientras escribes.\n');
   const mnemonic = (await promptSecret('Frase semilla: ')).trim();
   const words = mnemonic.split(/\s+/).filter(Boolean).length;
   if (words < 12) throw new Error(`Llegaron ${words} palabras; se esperan 12 o 24.`);
   const pair = sr25519CreateDerive(entropyToMiniSecret(mnemonicToEntropy(mnemonic)))('');
-  return {
-    address: AccountId().dec(pair.publicKey),
-    signer: getPolkadotSigner(pair.publicKey, 'Sr25519', pair.sign),
-  };
+  return { ...pair, address: AccountId().dec(pair.publicKey) };
+}
+
+export async function loadSigner() {
+  const { getPolkadotSigner } = await import('polkadot-api/signer');
+  const pair = await loadKeypair();
+  return { address: pair.address, signer: getPolkadotSigner(pair.publicKey, 'Sr25519', pair.sign) };
 }

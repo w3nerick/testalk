@@ -40,7 +40,13 @@ npm run simulate     # simula el deploy con el bytecode PolkaVM contra revive, s
 npm run check                          # cuántos recibos hay sellados
 npm run check -- ../examples/x.json    # ¿está sellado este recibo?
 npm run anchor -- recibo.json          # sella un recibo (pide semilla y confirmación)
+npm run sign -- recibo.json            # re-firma con tu cuenta → recibo.firmado.json
 ```
+
+`sign` convierte un recibo de ensayo (//Alice) en uno tuyo, o firma el JSON
+descargado si la firma dentro de Polkadot App falla. Rechaza recibos cuya firma
+actual no valide, firma igual que `signRaw` de una wallet (`<Bytes>…</Bytes>`)
+y escribe un archivo nuevo sin tocar la red.
 
 `anchor` verifica la firma del recibo en local, simula `seal()` contra el
 contrato, pide la frase semilla sin eco, vuelve a simular desde tu cuenta y solo

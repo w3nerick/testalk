@@ -10,7 +10,8 @@
     "simulate": "node scripts/deploy.mjs --simulate",
     "deploy": "node scripts/deploy.mjs",
     "anchor": "node scripts/anchor.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "sign": "node scripts/sign.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",

@@ -3,7 +3,7 @@
  *
  * Mismas claves y misma convención de firma, así un artefacto suyo se verifica
  * aquí y uno nuestro se verificaría en proofoftalk.dot. Lo que añadimos va en
- * claves nuevas (`network`, `genesis`, `lang`, `audio`, `speaker_address`) que su
+ * claves nuevas (`network`, `genesis`, `lang`, `speaker_address`) que su
  * verificador ignora pero que sí quedan cubiertas por la firma.
  */
 import { blake2b } from '@noble/hashes/blake2b';
@@ -16,6 +16,10 @@ export type ChainEntry =
   | { s: string }
   | { h: string; blk: string; time: string; full: string };
 
+/**
+ * Huella del WAV. Solo la traen recibos de prueba anteriores al 25 sep 2026: la
+ * app ya no graba audio. Se sigue aceptando para que esas firmas validen.
+ */
 export interface AudioSeal {
   alg: 'blake2b-256';
   hash: string;

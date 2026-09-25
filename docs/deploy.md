@@ -86,7 +86,8 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Durante la charla, **M** apaga o enciende el micrófono de la app (lo dicho apagado no entra al recibo)
 - [ ] Pulsar **Sellar charla** y aprobar la firma en el celular
 - [ ] Dejar el QR en pantalla el tiempo suficiente para que escaneen
-- [ ] Descargar el JSON y el WAV (**Audio WAV** si usaste el micrófono de la app, o `stt/grabaciones/` si usaste Python): Bulletin borra a los 14 días
+- [ ] Descargar el JSON del recibo: Bulletin borra a los 14 días
+- [ ] Guardar el video de la charla: es la referencia externa de lo que se dijo
 - [ ] Anclar el recibo ese mismo día: `cd contract && npm run anchor -- <recibo.json>`
 
 ## Comportamiento conocido del devnet
@@ -110,7 +111,7 @@ con apps reales en el contenedor. testalk ya está escrito para convivir con est
 
 | Síntoma | Qué hacer |
 |---|---|
-| "sin transcriptor" en vivo | Seguir hablando; escribir frases clave en "Añadir frase a mano". El WAV se sigue grabando. |
+| "sin transcriptor" en vivo | Seguir hablando; escribir frases clave en "Añadir frase a mano". El video de la charla cubre lo que no se transcriba. |
 | Asset Hub no conecta | No empezar: sin ancla de inicio el recibo no prueba nada. Revisar la red. |
 | La firma no llega | Revisar el celular; el botón **Reintentar** vuelve a pedirla sin perder la charla. |
 | La firma con identidad falla | **Firmar con la cuenta de la app**: el recibo vale, pero no queda ligado a tu username. |

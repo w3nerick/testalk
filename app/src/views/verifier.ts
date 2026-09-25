@@ -15,8 +15,6 @@ import {
   type SigCheck,
 } from '../lib/artifact';
 import QRCode from 'qrcode';
-import { blake2b } from '@noble/hashes/blake2b';
-import { u8aToHex } from '@polkadot/util';
 import { isInsideContainerSync } from '@parity/product-sdk-host';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { hexToU8a } from '@polkadot/util';
@@ -196,7 +194,6 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
         ${row('id', 'wait', 'Identidad', 'Consultando People chain…')}
         ${row('blocks', 'wait', 'Bloques en la cadena', 'Esperando…')}
         ${row('seal', 'wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
-        ${audioRow(a)}
       </section>
       <div class="dither-band"></div>
       <section class="timeline">
@@ -238,7 +235,6 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
 
   run(root, a, addr);
   sealRow(root, a, cid);
-  bindAudio(root, a);
 }
 
 function download(bytes: Uint8Array, cid: string) {
@@ -274,80 +270,20 @@ function limits(a: Artifact, addr: string): string {
           ${a.dotns ? `<li>Si la fila de identidad sale en verde, esa llave es la dueña de <b>${esc(a.dotns)}</b> en People chain.</li>` : ''}
           <li>El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}: su hash no se conocía.</li>
           <li>Existía a más tardar cuando se subió a Bulletin o se selló en Asset Hub.</li>
-          ${a.audio ? '<li>Si el speaker comparte el audio, se puede comprobar que es la misma grabación.</li>' : ''}
         </ul>
         </div>
         <div>
         <h3>No prueba</h3>
         <ul class="no">
           <li>Que lo dicho sea cierto. Prueba quién lo dijo, no si tiene razón.</li>
-          <li>Que la voz sea de esa persona: el recibo guarda texto, no la voz.</li>
+          <li>Que la voz sea de esa persona: el recibo guarda texto, no audio. Para eso está el video de la charla.</li>
+          <li>Cada palabra exacta: es la transcripción de Whisper, que puede equivocarse.</li>
           <li>El nombre, si People chain no lo confirma: cualquiera puede escribir otro nombre en un recibo.</li>
           <li>Que la llave sea de un humano único (eso lo daría Individuality).</li>
         </ul>
         </div>
       </div>
     </details>`;
-}
-
-function audioRow(a: Artifact): string {
-  if (!a.audio) return row('audio', 'warn', 'Grabación', 'Este recibo no incluye huella del audio.');
-  return row(
-    'audio',
-    'ok',
-    'Grabación sellada',
-    `${fmtDuration(a.audio.seconds * 1000)} de audio. Huella blake2b-256 <span class="mono">${esc(a.audio.hash.slice(0, 18))}…</span>. El speaker conserva el archivo: si lo comparte, cualquiera puede comprobar que es el mismo.`,
-    audioPicker('Comprobar audio'),
-  );
-}
-
-function audioPicker(label: string): string {
-  return `<label class="btn sm chk-action">${icon('waveform')}${label}<input type="file" accept="audio/wav,audio/x-wav,.wav" hidden id="wav" /></label>`;
-}
-
-/** Huella del WAV por partes: una charla de 15 min son ~30 MB. */
-async function hashFile(f: File, onProgress: (pct: number) => void): Promise<string> {
-  const h = blake2b.create({ dkLen: 32 });
-  const reader = f.stream().getReader();
-  let done = 0;
-  for (let r = await reader.read(); !r.done; r = await reader.read()) {
-    h.update(r.value);
-    done += r.value.byteLength;
-    onProgress(f.size ? Math.round((done / f.size) * 100) : 100);
-  }
-  return u8aToHex(h.digest());
-}
-
-let audioUrl: string | null = null;
-
-function bindAudio(root: HTMLElement, a: Artifact) {
-  const seal = a.audio;
-  const input = root.querySelector<HTMLInputElement>('#wav');
-  if (!seal || !input) return;
-  input.addEventListener('change', async () => {
-    const f = input.files?.[0];
-    if (!f) return;
-    setRow(root, 'audio', row('audio', 'wait', 'Comprobando audio', `Calculando la huella de ${esc(f.name)}…`));
-    const p = () => root.querySelector('#chk-audio p');
-    let hash: string;
-    try {
-      hash = await hashFile(f, pct => { const el = p(); if (el) el.textContent = `Calculando la huella de ${f.name}… ${pct}%`; });
-    } catch {
-      setRow(root, 'audio', row('audio', 'warn', 'Audio sin comprobar', 'No se pudo leer el archivo.', audioPicker('Elegir otro')));
-      return bindAudio(root, a);
-    }
-    if (hash.toLowerCase() !== seal.hash.toLowerCase()) {
-      setRow(root, 'audio', row('audio', 'bad', 'No es esta grabación',
-        `La huella de ${esc(f.name)} es <span class="mono">${esc(hash.slice(0, 18))}…</span>, el recibo dice <span class="mono">${esc(seal.hash.slice(0, 18))}…</span>. Basta un byte distinto (un recorte, otra exportación) para que no coincida.`,
-        audioPicker('Elegir otro')));
-      return bindAudio(root, a);
-    }
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    audioUrl = URL.createObjectURL(f);
-    setRow(root, 'audio', row('audio', 'ok', 'Audio auténtico',
-      `${esc(f.name)} es byte por byte la grabación que se selló al firmar.`,
-      `<audio class="chk-action" controls preload="metadata" src="${audioUrl}"></audio>`));
-  });
 }
 
 async function run(root: HTMLElement, a: Artifact, addr: string) {

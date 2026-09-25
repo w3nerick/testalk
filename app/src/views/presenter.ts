@@ -1,12 +1,12 @@
 import QRCode from 'qrcode';
 import { icon } from '../lib/icons';
 import { ASSET_HUB_GENESIS, NETWORK, chainSource, subscribeFinalized, type Block } from '../lib/chain';
-import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type AudioSeal, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
+import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
 import { connectSpeaker, currentSpeaker, identityUnavailableReason, signBytes, useAppAccount, type Speaker } from '../lib/signer';
 import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
 import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
 import { requestHostPermissions } from '../lib/permissions';
-import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
+import { startStt, stopStt, type SttStatus } from '../lib/stt';
 import { InAppMic, loadWhisper, whisperBackend, type LoadProgress } from '../lib/mic';
 import { asciiBar } from '../lib/ascii';
 import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
@@ -46,8 +46,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let awaitingBlock = false;
   // Una vez firmado, un fallo de subida no debe volver a pedir la firma.
   let signed: { artifact: Artifact; bytes: Uint8Array; cid: string } | null = null;
-  // La huella se pide una vez: después el transcriptor queda desconectado.
-  let audioSeal: AudioSeal | null | undefined;
+  // El transcriptor se cierra una vez: un reintento de firma o subida no lo reabre.
+  let liveClosed = false;
 
   // El transcriptor corre en localhost: ese permiso se pide aquí y no al arrancar.
   requestHostPermissions({ presenter: true });
@@ -65,7 +65,6 @@ export function renderPresenter(root: HTMLElement): Cleanup {
 
   // Micrófono de la app (Whisper en el navegador): alternativa al script de Python.
   let appMic: InAppMic | null = null;
-  let appWav: Blob | null = null;
   let micState: 'off' | 'loading' | 'ready' | 'error' = 'off';
   let micNote = '';
   let micProgress: LoadProgress | null = null;
@@ -255,8 +254,6 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       chainStatus.delete(drawChain);
       micListeners.delete(redrawStt);
       levelListeners.delete(showLevel);
-      // La grabación que se sella empieza aquí, no cuando se abrió el micrófono.
-      appMic?.resetRecording();
       draft.title = (root.querySelector('#title') as HTMLInputElement).value.trim() || 'Charla sin título';
       draft.venue = (root.querySelector('#venue') as HTMLInputElement).value.trim();
       draft.lang = (root.querySelector('#lang') as HTMLSelectElement).value;
@@ -435,7 +432,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       if (!draft.chain.some(e => 's' in e)) return toast('Todavía no hay nada que sellar');
       clearInterval(timer);
       // Con el micrófono de la app, las últimas frases se siguen transcribiendo mientras
-      // se cierra la grabación: se desengancha después, en seal().
+      // se cierra el micrófono: se desengancha después, en seal().
       if (!appMic) detachLive();
       seal(root.querySelector<HTMLElement>('#seal-box')!);
     });
@@ -447,7 +444,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const sp = currentSpeaker()!;
     const bulletin = canUseBulletin() && !sp.rehearsal;
     const steps = [
-      ['waveform', 'Cerrando la grabación'],
+      ['waveform', 'Transcribiendo las últimas frases'],
       ['signature', 'Firma en tu celular'],
       ['fileArrowUp', bulletin ? 'Subiendo a Bulletin (1 a 3 min)' : 'Preparando el recibo'],
     ] as const;
@@ -478,19 +475,16 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     try {
       if (signed) return await upload(box, draw, bulletin);
       draw(step);
-      if (audioSeal === undefined) {
+      if (!liveClosed) {
         if (appMic) {
-          const r = await appMic.stop();
-          appWav = r.wav;
-          audioSeal = r.seal;
+          await appMic.stop();
           appMic = null;
         } else {
-          audioSeal = await sealAudio();
           stopStt();
         }
         detachLive();
+        liveClosed = true;
       }
-      const audio = audioSeal;
 
       draw(++step);
       // Remache de cierre: las últimas frases también quedan entre dos bloques.
@@ -519,7 +513,6 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         genesis: ASSET_HUB_GENESIS,
         lang: draft.lang,
         speaker_address: who.address,
-        audio,
         ...(who.rehearsal ? { rehearsal: true as const } : {}),
       };
       const sig = await signBytes(canonicalBytes(unsigned as unknown as Record<string, unknown>));
@@ -563,19 +556,10 @@ export function renderPresenter(root: HTMLElement): Cleanup {
           <a class="btn sm" href="#/verificar">${icon('shieldCheck')}Verificar</a>
           <button class="btn sm" id="dl">${icon('downloadSimple')}JSON</button>
           <button class="btn sm" id="cj">${icon('copy')}Copiar JSON</button>
-          ${appWav ? `<button class="btn sm" id="wav">${icon('downloadSimple')}Audio WAV</button>` : ''}
           ${onBulletin ? `<button class="btn sm" id="cp">${icon('copy')}Enlace</button>` : ''}
         </div>
       </div>`;
     box.querySelector('#dl')!.addEventListener('click', () => downloadJson(artifact, cid));
-    box.querySelector('#wav')?.addEventListener('click', () => {
-      // La huella del recibo es la de este archivo: guárdalo sin convertirlo.
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(appWav!);
-      a.download = `testalk-${cid.slice(-10)}.wav`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    });
     // Respaldo de la descarga: en el celular un <a download> puede no hacer nada.
     box.querySelector('#cj')!.addEventListener('click', () => copyText(JSON.stringify(artifact), 'JSON copiado'));
     box.querySelector('#cp')?.addEventListener('click', () => copyText(url, 'Enlace copiado'));

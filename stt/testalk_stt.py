@@ -2,11 +2,10 @@
 Transcriptor local de testalk.
 
 Escucha el micrófono, corta frases con webrtcvad, las transcribe con
-faster-whisper y las emite por ws://localhost:8787 a la app. El audio se graba
-SIEMPRE a WAV, pase lo que pase con la transcripción.
-
-Cuando la app sella la charla envía {"type": "seal"}: se cierra el WAV y se
-responde con su huella blake2b-256, que queda dentro del recibo firmado.
+faster-whisper y las emite por ws://localhost:8787 a la app. La app solo usa el
+texto: el recibo no lleva audio (la referencia externa es el video de la
+charla). Cada frase queda también en un JSONL local; el audio solo se guarda
+con --guardar-audio, como copia local que no entra al recibo.
 
 Arquitectura inspirada en el companion de Proof of Talk (Karim Jedda).
 
@@ -15,6 +14,7 @@ Uso:
   python testalk_stt.py --language es --model small
   python testalk_stt.py --device 2 --model medium
   python testalk_stt.py --demo guion.txt        # sin micrófono ni modelo: para ensayar
+  python testalk_stt.py --guardar-audio          # además, copia local del audio en WAV
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import concurrent.futures
-import hashlib
 import json
 import queue
 import signal
@@ -42,14 +41,6 @@ PREROLL_FRAMES = 7            # ~210 ms antes del inicio, para no cortar la prim
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-def file_blake2b(path: Path) -> str:
-    h = hashlib.blake2b(digest_size=32)
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return "0x" + h.hexdigest()
 
 
 class Hub:
@@ -79,22 +70,25 @@ class Hub:
 
 
 class Recorder:
-    """WAV + JSONL siempre en disco, independiente del STT."""
+    """Frases en JSONL y, con --guardar-audio, el WAV. Solo en disco local: nada de esto entra al recibo."""
 
-    def __init__(self, out: Path) -> None:
-        import soundfile as sf
-
+    def __init__(self, out: Path, save_audio: bool) -> None:
         out.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.wav_path = out / f"charla-{stamp}.wav"
         self.jsonl_path = out / f"charla-{stamp}.jsonl"
-        self.wav = sf.SoundFile(str(self.wav_path), mode="w", samplerate=SAMPLE_RATE, channels=1, subtype="PCM_16")
         self.jsonl = open(self.jsonl_path, "a", buffering=1, encoding="utf-8")
+        self.wav_path: Path | None = None
+        self.wav = None
+        if save_audio:
+            import soundfile as sf
+
+            self.wav_path = out / f"charla-{stamp}.wav"
+            self.wav = sf.SoundFile(str(self.wav_path), mode="w", samplerate=SAMPLE_RATE, channels=1, subtype="PCM_16")
         self.frames = 0
         self.closed = False
 
     def audio(self, samples) -> None:
-        if self.closed:
+        if self.closed or self.wav is None:
             return
         self.wav.write(samples)
         self.frames += 1
@@ -105,19 +99,13 @@ class Recorder:
         if not self.closed:
             self.jsonl.write(json.dumps(ev, ensure_ascii=False) + "\n")
 
-    def seal(self) -> dict:
-        """Cierra el WAV y devuelve su huella. Idempotente."""
+    def close(self) -> None:
+        """Cierra los archivos. Idempotente."""
         if not self.closed:
             self.closed = True
-            self.wav.close()
+            if self.wav is not None:
+                self.wav.close()
             self.jsonl.close()
-        return {
-            "type": "audio",
-            "hash": file_blake2b(self.wav_path),
-            "bytes": self.wav_path.stat().st_size,
-            "seconds": round(self.frames * FRAME_MS / 1000, 1),
-            "file": self.wav_path.name,
-        }
 
 
 def vad_loop(audio_q: "queue.Queue", vad, on_utterance) -> None:
@@ -158,6 +146,7 @@ async def main() -> None:
     ap.add_argument("--vad", type=int, default=2, choices=[0, 1, 2, 3])
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--out", default="grabaciones")
+    ap.add_argument("--guardar-audio", action="store_true", help="copia local del audio en WAV (no entra al recibo)")
     ap.add_argument("--demo", default=None, help="archivo de texto: emite una línea cada ~4 s, sin micrófono")
     args = ap.parse_args()
 
@@ -180,18 +169,8 @@ async def main() -> None:
         await hub.add(ws)
         print("[ws] app conectada", flush=True)
         try:
-            async for raw in ws:
-                try:
-                    msg = json.loads(raw)
-                except Exception:
-                    continue
-                if msg.get("type") == "seal":
-                    if recorder is None:
-                        await ws.send(json.dumps({"type": "audio", "hash": None}))
-                        continue
-                    ev = recorder.seal()
-                    print(f"[seal] {ev['file']}  {ev['seconds']} s  {ev['hash']}", flush=True)
-                    await ws.send(json.dumps(ev))
+            async for _ in ws:
+                pass  # la app no manda nada: solo recibe frases
         finally:
             hub.clients.discard(ws)
 
@@ -234,7 +213,7 @@ async def main() -> None:
         list(model.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32), language=args.language)[0])
         print(f"[boot] listo en {time.time() - t0:.1f} s", flush=True)
 
-        recorder = Recorder(Path(args.out))
+        recorder = Recorder(Path(args.out), args.guardar_audio)
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         def transcribe(samples) -> str:
@@ -271,7 +250,9 @@ async def main() -> None:
         )
         stream.start()
         loop.run_in_executor(None, vad_loop, audio_q, webrtcvad.Vad(args.vad), on_utterance)
-        print(f"[mic] grabando en {recorder.wav_path}", flush=True)
+        if recorder.wav_path:
+            print(f"[mic] copia del audio en {recorder.wav_path}", flush=True)
+        print(f"[mic] escuchando; frases en {recorder.jsonl_path}", flush=True)
 
     print("[listo] Ctrl+C para salir", flush=True)
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -286,7 +267,7 @@ async def main() -> None:
         stream.stop()
         stream.close()
     if recorder:
-        recorder.seal()
+        recorder.close()
     server.close()
     await server.wait_closed()
     print("\n[fin]")

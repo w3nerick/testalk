@@ -82,8 +82,6 @@ sequenceDiagram
         H-->>A: siguiente bloque finalizado
         Note over A: chain = [bloque, frase, bloque, frase, ...]
     end
-    A->>S: seal
-    S-->>A: huella blake2b-256 del WAV
     A->>P: ¿de quién es mi username?
     P-->>A: cuenta dueña
     A->>W: firmar bytes canónicos con esa cuenta
@@ -101,12 +99,13 @@ especificación del recibo en [`docs/receipt-format.md`](docs/receipt-format.md)
 
 | ✅ Prueba | ❌ No prueba |
 |---|---|
-| Esta llave firmó **exactamente** este texto | Que la voz sea del firmante (el audio no viaja en el recibo) |
+| Esta llave firmó **exactamente** este texto | Que la voz sea del firmante: el recibo lleva texto, no audio (para eso está el video de la charla) |
 | La llave es la dueña del **username** del recibo en People chain (si se firmó con la identidad `.dot`) | |
 | El texto **no existía antes** del primer bloque | Que se haya dicho en vivo |
 | El recibo **ya existía** en el bloque en que se ancló en `TalkRegistry` | |
 | Cada block hash **existe** en Asset Hub a esa altura | Que el firmante sea una persona única (falta Individuality) |
-| Si el speaker comparte el WAV, que es **el mismo audio** | Que lo dicho sea verdad |
+| | Que lo dicho sea verdad |
+| | Cada palabra exacta: es la transcripción de Whisper |
 
 Prueba **atribución**, no veracidad. Modelo de amenazas completo en
 [`docs/verification.md`](docs/verification.md).
@@ -128,7 +127,7 @@ Lo que cambia:
 | Red | Red del Web3 Summit | Products Devnet (Asset Hub `0xd6eec2…`) |
 | Bloques | `bestBlocks$` (pueden revertirse en un reorg) | `finalizedBlock$` (no se revierten) |
 | Verificador | Solo firma | Firma, cada block hash consultado en la cadena **y** que el username sea dueño de la llave |
-| Audio | WAV local, fuera del recibo | Huella blake2b-256 del WAV **dentro** del recibo firmado |
+| Audio | WAV local, fuera del recibo | No se guarda: el recibo lleva solo texto y la referencia externa es el video de la charla |
 | Cierre | Última frase sin bloque posterior | Remache de bloque al sellar |
 | Firmante | `getLegacyAccountSigner` del dueño del username | Lo mismo; si el host no lo permite, la cuenta de la app, y el verificador lo dice |
 | QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://devnet-test-talk26.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
@@ -151,7 +150,7 @@ testalk/
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
 │   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
-│   │   │   ├── mic.ts          Micrófono de la app: detector de voz, Whisper y WAV
+│   │   │   ├── mic.ts          Micrófono de la app: detector de voz y Whisper
 │   │   │   ├── whisper.worker.ts  Whisper en un hilo aparte (la interfaz no se congela)
 │   │   │   ├── host.ts         waitForHost + timeouts para toda llamada al host
 │   │   │   └── ascii.ts        Onda de voz, sello y barras en ASCII
@@ -204,8 +203,9 @@ python3 -m venv .venv
 ```
 
 El modo `--demo` solo necesita `websockets`. La primera corrida con micrófono
-descarga el modelo de Whisper (~480 MB para `small`). El audio se guarda
-siempre en `stt/grabaciones/`, pase lo que pase con la transcripción.
+descarga el modelo de Whisper (~480 MB para `small`). Las frases quedan en
+`stt/grabaciones/*.jsonl`; el audio no se guarda salvo con `--guardar-audio`
+(copia local, no entra al recibo).
 
 ### 3. Anclar un recibo para siempre
 
@@ -263,7 +263,7 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Transcripción en vivo con bloques finalizados entrelazados
 - [x] Firma sr25519 con formato compatible con Proof of Talk v1
 - [x] Verificador web y CLI con comprobación on-chain de bloques
-- [x] Huella del audio dentro del recibo
+- [x] Recibo solo con texto: sin audio ni huella del WAV (25 sep 2026). La charla se graba en video y esa es la referencia externa
 - [x] Flujo completo probado en modo ensayo contra el devnet real
 - [x] Código alineado con el comportamiento medido del devnet ([detalle](docs/deploy.md#comportamiento-conocido-del-devnet))
 - [ ] Prueba en Polkadot Desktop y celular: firma de bytes con `SignerManager`, subida a Bulletin y acceso a `localhost`
@@ -274,7 +274,6 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Verificar en People chain que el username declarado sea dueño de la llave (web y CLI)
 - [x] Firmar con la identidad `.dot` (username → People chain → cuenta dueña), con la cuenta de la app de respaldo
 - [ ] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): lo mide `#/diagnostico`
-- [x] Comparar un WAV contra la huella desde el verificador
 - [x] Grabar y transcribir **dentro de la app**, sin el script de Python: micrófono del contenedor + Whisper base en un Web Worker (WebGPU o WebAssembly), con botón y tecla **M** para encender o apagar el micrófono
 - [ ] Probar el micrófono de la app en una charla real en Polkadot Desktop
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin

@@ -115,7 +115,6 @@ async function main() {
   if (seal) console.log(c.ok(`✓ Sello permanente en Asset Hub, bloque #${Number(seal.blockNumber).toLocaleString('en-US')} (${new Date(Number(seal.sealedAt) * 1000).toISOString()})`));
   else if (seal === null) console.log(c.warn('! Sin sello permanente: Bulletin lo borra a los 14 días'));
   else console.log(c.dim('· Registro permanente sin consultar'));
-  console.log(a.audio ? c.ok(`✓ Huella del audio ${a.audio.hash.slice(0, 18)}… (${a.audio.seconds} s)`) : c.dim('· Sin huella de audio'));
 
   const idBad = id.status === 'address' || id.status === 'mismatch';
   const valid = sig.ok && b.status !== 'fail' && !idBad;

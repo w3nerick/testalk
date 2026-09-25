@@ -32,7 +32,7 @@ salvo `pubkey`, `sig` y `sig_alg`, quedan cubiertas por la firma.
 | `genesis` | hex | Genesis de Asset Hub. Sin él, el verificador no consulta bloques |
 | `lang` | string | Idioma de la transcripción |
 | `speaker_address` | SS58 | Dirección de `pubkey` (prefijo 42). Si no corresponde a `pubkey`, el verificador marca **Dirección falsa** |
-| `audio` | objeto o `null` | `{ alg: "blake2b-256", hash, bytes, seconds }` del WAV |
+| `audio` | objeto o `null` | Ya no se genera. Recibos de prueba anteriores al 25 sep 2026 traen `{ alg: "blake2b-256", hash, bytes, seconds }` del WAV; siguen validando porque la clave está firmada |
 | `rehearsal` | `true` | Solo en recibos de ensayo firmados con cuenta de prueba |
 
 ## `chain`
@@ -74,8 +74,8 @@ function canonicalBytes(a) {
 }
 ```
 
-Solo se ordenan las claves de primer nivel. El orden dentro de `chain` y de
-`audio` es el de construcción y forma parte de lo firmado.
+Solo se ordenan las claves de primer nivel. El orden dentro de `chain` es el
+de construcción y forma parte de lo firmado.
 
 La wallet puede envolver el mensaje en `<Bytes>…</Bytes>` antes de firmar;
 `signatureVerify` de `@polkadot/util-crypto` acepta ambas formas.

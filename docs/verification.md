@@ -9,7 +9,6 @@ ejecutan el mismo código, [`app/src/lib/artifact.ts`](../app/src/lib/artifact.t
 2. **Identidad.** La dirección que se muestra sale de `pubkey`, nunca del recibo. Si `speaker_address` no corresponde a `pubkey`: **Dirección falsa**. Si hay `dotns`, pregunta a People chain de quién es ese username (`Resources.UsernameOwnerOf`) y exige que sea `pubkey`.
 3. **Bloques.** Si `genesis` coincide con Asset Hub del devnet, pide a la cadena el hash de cada altura (`archive_v1_hashByHeight`, con `chain_getBlockHash` de respaldo) y lo compara con `full`.
 4. **Sello permanente.** Consulta `get(huella)` en `TalkRegistry` (pallet-revive) con una simulación que no firma. Informativo: no cambia el veredicto.
-5. **Audio.** Muestra la huella del WAV si el recibo la incluye.
 
 | Resultado | Veredicto |
 |---|---|
@@ -30,24 +29,18 @@ hashes inventados pero bien firmado le pasaría; aquí no.
 - **Identidad** (si la fila sale en verde). Esa llave es la dueña del username `dotns` en People chain.
 - **Cota inferior de tiempo.** El hash de un bloque es impredecible antes de que el bloque exista. El texto que sigue a un bloque no pudo fijarse antes de ese bloque.
 - **Cota superior de tiempo** (si está anclado). El bloque en que `TalkRegistry` guardó la huella: el recibo existía a más tardar entonces.
-- **Mismo audio.** Si el speaker publica el WAV, cualquiera puede comprobar que su blake2b-256 coincide con `audio.hash`:
-
-  ```bash
-  b2sum -l 256 charla-20261030-101500.wav
-  python3 -c "import hashlib,sys;print(hashlib.blake2b(open(sys.argv[1],'rb').read(),digest_size=32).hexdigest())" charla.wav
-  ```
 
 ## Qué no prueba
 
 | Límite | Consecuencia | Mitigación posible |
 |---|---|---|
-| El audio no va en el recibo | La firma no demuestra que la voz sea del firmante | Publicar el WAV; la huella lo ata al recibo |
+| El recibo no lleva audio | La firma no demuestra que la voz sea del firmante | El video de la charla muestra quién habló |
 | Ventana entre la charla y el anclaje | Alguien podría juntar block hashes durante una charla y escribir el texto después, hasta que se ancla | Anclar en `TalkRegistry` en cuanto termina la charla: la ventana queda fijada on-chain y es visible |
 | La llave no prueba humanidad | Un bot con llave puede firmar | Individuality / proof of personhood cuando esté disponible |
 | `speaker` lo declara la app | Es solo el nombre mostrado | El verificador lo marca como declarado; la identidad la da `dotns` comprobado en People chain |
 | Firmado con la cuenta de la app | Si el host no firma con la identidad `.dot`, la llave es una cuenta de producto que nadie puede ligar a un username | El recibo lleva `dotns` vacío y el verificador lo dice; medir el camino de identidad con `#/diagnostico` |
 | Bulletin borra a los 14 días | Pasado ese plazo el QR deja de resolver | `TalkRegistry` conserva huella y firma; el JSON guardado sigue verificándose con el CLI y se ata al sello por su huella |
-| Whisper puede equivocarse | El texto firmado es la transcripción, no el audio | El WAV sellado es la referencia |
+| Whisper puede equivocarse | El texto firmado es la transcripción, no lo dicho palabra por palabra | El video de la charla es la referencia |
 
 ## Recibos de ensayo
 

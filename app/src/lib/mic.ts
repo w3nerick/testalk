@@ -5,17 +5,15 @@
  *
  * Mismo esquema que el script de Python: un detector de voz por energía abre
  * la frase tras ~90 ms de voz y la cierra tras ~510 ms de silencio (tope de
- * 12 s), se transcribe una frase a la vez para que la latencia no se acumule,
- * y el audio completo se guarda en WAV para atar su huella al recibo.
+ * 12 s), y se transcribe una frase a la vez para que la latencia no se acumule.
+ * El audio no se guarda: cada tramo se descarta en cuanto se transcribe. El
+ * recibo lleva solo el texto; la referencia externa es el video de la charla.
  *
  * El modelo (~80-200 MB) se descarga de Hugging Face la primera vez y queda en
  * la caché del navegador: en un evento, se precarga antes de subir al escenario.
  */
-import { blake2b } from '@noble/hashes/blake2b';
-import { u8aToHex } from '@polkadot/util';
 import { isInsideContainerSync, requestDevicePermission } from '@parity/product-sdk-host';
 import { withTimeout, TIMED_OUT } from './host';
-import type { AudioSeal } from './artifact';
 
 export const WHISPER_MODEL = 'onnx-community/whisper-base';
 
@@ -166,8 +164,6 @@ export class InAppMic {
   private stream?: MediaStream;
   private src?: MediaStreamAudioSourceNode;
   private node?: ScriptProcessorNode;
-  private pcm: Int16Array[] = [];
-  private samples = 0;
   private noiseDb = -60;
   private voicedRun = 0;
   private silentRun = 0;
@@ -225,8 +221,8 @@ export class InAppMic {
 
   /**
    * Apaga el micrófono: termina de transcribir la frase en curso y suelta el
-   * dispositivo (se apaga el indicador del sistema). La grabación se pausa: lo
-   * que se diga apagado no entra al recibo ni al WAV.
+   * dispositivo (se apaga el indicador del sistema). Lo que se diga apagado no
+   * se transcribe ni entra al recibo.
    */
   pause() {
     if (this.paused) return;
@@ -250,20 +246,10 @@ export class InAppMic {
     this.paused = false;
   }
 
-  /** Empieza la grabación que se sella: lo que se captó antes de "Empezar" no cuenta. */
-  resetRecording() {
-    this.pcm = [];
-    this.samples = 0;
-  }
-
   private onAudio(chunk: Float32Array) {
-    // Apagado, el nodo sigue recibiendo silencio: no se graba ni se analiza.
+    // Apagado, el nodo sigue recibiendo silencio: no se analiza.
     if (this.paused) return;
     const x = new Float32Array(chunk);
-    const s16 = new Int16Array(x.length);
-    for (let i = 0; i < x.length; i++) s16[i] = Math.max(-32768, Math.min(32767, Math.round(x[i] * 32767)));
-    this.pcm.push(s16);
-    this.samples += x.length;
 
     let peak = -120;
     for (let off = 0; off + FRAME <= x.length; off += FRAME) {
@@ -342,19 +328,10 @@ export class InAppMic {
     await Promise.race([new Promise<void>(r => this.idle.push(r)), new Promise(r => setTimeout(r, ms))]);
   }
 
-  /** Detiene el micrófono y devuelve el WAV de la charla con su huella blake2b-256. */
-  async stop(): Promise<{ wav: Blob; seal: AudioSeal }> {
+  /** Transcribe lo pendiente y suelta el micrófono. */
+  async stop(): Promise<void> {
     await this.drain();
-    this.node?.disconnect();
-    this.src?.disconnect();
-    this.stream?.getTracks().forEach(t => t.stop());
-    await this.ctx?.close().catch(() => undefined);
-    const wav = encodeWav(this.pcm, this.samples);
-    const hash = u8aToHex(blake2b(wav, { dkLen: 32 }));
-    return {
-      wav: new Blob([wav as BlobPart], { type: 'audio/wav' }),
-      seal: { alg: 'blake2b-256', hash, bytes: wav.byteLength, seconds: Math.round((this.samples / RATE) * 10) / 10 },
-    };
+    this.close();
   }
 
   /** Suelta el micrófono sin sellar (al salir de la vista). */
@@ -364,19 +341,4 @@ export class InAppMic {
     this.stream?.getTracks().forEach(t => t.stop());
     this.ctx?.close().catch(() => undefined);
   }
-}
-
-/** PCM16 mono a 16 kHz con cabecera WAV de 44 bytes. */
-function encodeWav(chunks: Int16Array[], samples: number): Uint8Array {
-  const data = samples * 2;
-  const out = new Uint8Array(44 + data);
-  const v = new DataView(out.buffer);
-  const text = (at: number, s: string) => { for (let i = 0; i < s.length; i++) out[at + i] = s.charCodeAt(i); };
-  text(0, 'RIFF'); v.setUint32(4, 36 + data, true); text(8, 'WAVE');
-  text(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  text(36, 'data'); v.setUint32(40, data, true);
-  let at = 44;
-  for (const c of chunks) { out.set(new Uint8Array(c.buffer, c.byteOffset, c.byteLength), at); at += c.byteLength; }
-  return out;
 }

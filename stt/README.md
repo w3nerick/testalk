@@ -2,8 +2,10 @@
 
 Escucha el micrófono, corta frases con `webrtcvad`, las transcribe con
 [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) y las envía a la
-app por `ws://localhost:8787`. El audio se graba **siempre** en
-`grabaciones/charla-AAAAMMDD-HHMMSS.wav`, falle o no la transcripción.
+app por `ws://localhost:8787`. Cada frase queda también en
+`grabaciones/charla-AAAAMMDD-HHMMSS.jsonl`. El audio **no** se guarda: el recibo
+lleva solo texto y la referencia externa es el video de la charla. Con
+`--guardar-audio` se escribe además un WAV local, que no entra al recibo.
 
 ```bash
 python3 -m venv .venv
@@ -39,12 +41,4 @@ Servidor → app, una vez por frase terminada:
 { "type": "final", "text": "y eso es lo que hace caro falsificar.", "wall_ts": "2026-10-30T16:32:55.123Z" }
 ```
 
-App → servidor al sellar, y respuesta:
-
-```json
-{ "type": "seal" }
-{ "type": "audio", "hash": "0x…", "bytes": 48213004, "seconds": 1506.9, "file": "charla-20261030-101500.wav" }
-```
-
-`hash` es blake2b-256 del WAV completo. Después del sellado el WAV queda
-cerrado y no se modifica.
+La app no le manda nada al servidor: solo recibe frases.

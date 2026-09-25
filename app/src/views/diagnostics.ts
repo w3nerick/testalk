@@ -45,7 +45,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
           <button class="btn primary" id="run">${icon('play')}Probar</button>
           <button class="btn" id="run-bulletin">${icon('fileArrowUp')}Probar con subida a Bulletin</button>
         </div>
-        <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda hasta 1 min).</p>
+        <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda de 1 a 3 min).</p>
       </section>
       <section class="card checks" id="out"><div class="chk idle">${tag('idle')}<b>Sin ejecutar</b><p>Pulsa Probar.</p></div></section>
       <div class="actions"><button class="btn" id="copy" disabled>${icon('copy')}Copiar reporte</button></div>

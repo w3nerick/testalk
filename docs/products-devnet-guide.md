@@ -194,22 +194,47 @@ En Terminal.app, desde la carpeta de tu proyecto:
 npm run deploy
 ```
 
-Lo que vas a ver:
+Lo que vas a ver (salida real del deploy de testalk, recortada):
 
 ```
-   Worker: dev signer 5DfhGy…RzV (signs Bulletin storage)
-   Storage signer: worker 5DfhGy…RzV (transfer mode)
-============================================================
-DEPLOYING TO TESTNET                    v0.16.7
-============================================================
-   Environment: Products Devnet
 ============================================================
 Preflight
 ============================================================
-   DotNS protocol v2 detected on devnet
-   Account: auto-mapped (Revive.OriginalAccount confirmed)
    Domain: devnet-test-talk26.dot
+   DotNS: devnet-test-talk26.dot requires NoStatus
+   Your PoP: NoStatus
+   Domain: available
+   DotNS: will register devnet-test-talk26.dot and transfer it to your account 0xadb4…fba6
+   Authorization: expires at block 1063388 (current: 989870)
+============================================================
+Storage
+============================================================
+   CAR (3-section — Phase A): 1.09 MB …
+   [1/2] chunk 0 — 0.99 MB (nonce: 3009)
+   [2/2] chunk 1 — 0.10 MB (nonce: 3010)
+   All 2 chunks verified ✓
+   Root CID: bafybeigramb6472vlftoqiteccbnwduie5u5cynxprm74bg5pd6zmm3urm
+   ✓ All 5 chunks finalised (waited 39s)
+============================================================
+DotNS
+============================================================
+   Required status: NoStatus
+   Price: 10 PAS
+   Submitting commitment... finalized
+   Waiting for on-chain block.timestamp > … (timeout 90s)
+   Finalizing registration for devnet-test-talk26.dot... finalized
+   Setting contenthash: bafybeigramb…3urm
+   Verified on-chain: bafybeigramb…3urm
+   Handed devnet-test-talk26.dot to 0xadb4…fba6 (ok, …)
+============================================================
+DEPLOYMENT COMPLETE!
+============================================================
+   https://devnet-test-talk26.dev-dot.li
+   devnet-test-talk26.dot  (in a Polkadot app: mobile or desktop)
 ```
+
+Todo el proceso tardó unos 3 minutos. El `Revive.call: nonce contention (attempt 1/5)`
+que puede aparecer en medio es un reintento automático: no hagas nada.
 
 Qué pasa por dentro, en el modo por defecto (solo en testnet):
 
@@ -223,13 +248,33 @@ Qué pasa por dentro, en el modo por defecto (solo en testnet):
 Si prefieres que cada transacción la firme tu celular, agrega
 `--no-transfer-to-signedin-user`.
 
+### El manifest puede fallar, y la app funciona igual
+
+Después de `DEPLOYMENT COMPLETE!`, `pad` intenta publicar el **manifest**: el
+nombre, la descripción y el ícono que muestra Polkadot App. Con `pad` 0.16.7 y
+`pad login` falla así:
+
+```
+Manifest publish failed: Contract execution would revert during setText on DOTNS_CONTENT_RESOLVER
+  signer: 5DfhGy…RzV
+```
+
+Es un problema de orden en `pad`: primero te traspasa el nombre y después
+intenta escribir el manifest con el worker, que ya no es dueño. En esta versión
+el manifest solo se firma con `--mnemonic` o con la cuenta del worker, nunca
+con tu sesión del celular.
+
+- **La app funciona:** el nombre ya apunta al contenido. Solo falta la ficha en la galería de Polkadot App.
+- **No** pongas la frase semilla de tu cuenta del celular en la terminal para arreglarlo.
+- Si la ficha te importa, usa desde el principio una cuenta de deploy propia con `--mnemonic` (ver [Si publicas con tu propia cuenta](#si-publicas-con-tu-propia-cuenta)), o espera a una versión de `pad` que lo corrija.
+
 ## 7. Comprobar
 
 ```bash
 dotns content view devnet-test-talk26 --env devnet    # debe mostrar el CID nuevo
 ```
 
-- Navegador: `https://devnet-test-talk26.dev-dot.li`
+- Navegador: `https://devnet-test-talk26.dev-dot.li`. Carga en unos 10 segundos: el cargador busca el nombre, baja el contenido y abre tu app en un iframe (`devnet-test-talk26.app.dev-dot.li`). Las rutas con `#` llegan intactas: `…dev-dot.li/#/diagnostico` abre directo esa vista.
 - Polkadot Desktop: escribe `devnet-test-talk26.dot` en la barra de direcciones.
 - Celular: el celular no tiene barra de direcciones, así que abre la app desde **Browse** o desde un enlace.
 
@@ -239,7 +284,9 @@ personhood.
 ## 8. Publicar una versión nueva
 
 Repite `npm run deploy`. `pad` solo sube lo que cambió y apunta el nombre al
-contenido nuevo.
+contenido nuevo. Como el nombre ya es tuyo, esta vez avisa
+*"You already own … updating its content needs your signature"* y te pide
+**una firma en el celular**.
 
 Cada versión tiene **otro origen** (otro hash), así que el `localStorage` del
 navegador empieza vacío. Para datos que deben sobrevivir entre versiones usa
@@ -257,7 +304,7 @@ descubrir, con el código de testalk como referencia:
 | Red | Pide el permiso `Remote` con cada dominio externo **al arrancar**. Sin él, `fetch` y WebSocket fallan en silencio | [`lib/permissions.ts`](../app/src/lib/permissions.ts) |
 | Permisos del dispositivo | `Clipboard` para copiar y `OpenUrl` para abrir enlaces externos en el celular | [`lib/permissions.ts`](../app/src/lib/permissions.ts) |
 | Cuentas | `SignerManager` entrega una **cuenta de producto** derivada para tu dominio, no la identidad del usuario. Para firmar como la persona, usa la cuenta dueña de su username en People chain | [`lib/signer.ts`](../app/src/lib/signer.ts), [`lib/people.ts`](../app/src/lib/people.ts) |
-| Bulletin | `requestResourceAllocation([{ tag: 'BulletinAllowance' }])`, luego el permiso `PreimageSubmit` (no `ChainSubmit`), luego `submit()`. Una cuota `NotAvailable` no impide subir. Tarda alrededor de 1 minuto, y los datos se borran a los **14 días** | [`lib/bulletin.ts`](../app/src/lib/bulletin.ts) |
+| Bulletin | `requestResourceAllocation([{ tag: 'BulletinAllowance' }])`, luego el permiso `PreimageSubmit` (no `ChainSubmit`), luego `submit()`. Una cuota `NotAvailable` no impide subir. Tarda alrededor de 1 minuto, y los datos se borran a los **14 días**. Para leer fuera del contenedor, el gateway IPFS `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<cid>` sirve contenido de Bulletin (medido con un CID `bafk2bza…` en 0.3 s) | [`lib/bulletin.ts`](../app/src/lib/bulletin.ts) |
 | Cadenas | `getHostProvider(genesis)` dentro del contenedor, RPC público fuera | [`lib/chain.ts`](../app/src/lib/chain.ts) |
 | Enlaces y QR | `https://nombre.dev-dot.li/...` abre en cualquier celular; `nombre.dot` solo dentro de Polkadot App | [`views/presenter.ts`](../app/src/views/presenter.ts) |
 | Diagnóstico | Una página que pruebe cada pieza **en el dispositivo real** y dé un reporte copiable. Te ahorra días de adivinar | [`views/diagnostics.ts`](../app/src/views/diagnostics.ts) |
@@ -292,6 +339,8 @@ Límites medidos por otros equipos ([TWR.DOT](https://github.com/TheWhiteRabbitM
 | El botón de firmar se queda cargando | Llamada al host sin tope, o sin permiso `ChainSubmit` | `SignerManager.connect()` lo pide solo; pon tope a toda llamada al host |
 | Los datos guardados desaparecen al publicar | `localStorage` cambia de origen en cada versión | `getHostLocalStorage()` |
 | `npm install -g` responde `EACCES` | Sin permisos para instalar globalmente | `--prefix ~/.local` ([paso 2](#2-instalar-las-herramientas)) |
+| `Manifest publish failed: … revert during setText` | `pad` traspasó el nombre antes de escribir el manifest | La app funciona igual ([ver arriba](#el-manifest-puede-fallar-y-la-app-funciona-igual)) |
+| `Revive.call: nonce contention (attempt 1/5)` | Dos transacciones seguidas del worker | Nada: `pad` reintenta solo |
 
 ## Si publicas con tu propia cuenta
 

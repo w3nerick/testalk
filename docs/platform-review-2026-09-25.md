@@ -50,9 +50,9 @@ Y el diseño ya sigue lo que TWR midió en el contenedor:
 | H1 | Crítico | El verificador muestra como verificada una identidad que la firma no prueba |
 | H2 | Crítico para el propósito | La firma sale de una cuenta de producto de la app, no de la identidad del speaker |
 | H3 | Bloqueante de deploy | `testalk.dot` requiere Full Personhood |
-| H4 | Alto | El QR no abre para quien lo escanea con la cámara del teléfono |
+| H4 | **Corregido y medido** | QR a `https://devnet-test-talk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Medido tras el deploy: el gateway carga la app en ~9 s y conserva la ruta (`…dev-dot.li/#/diagnostico` abre el iframe `devnet-test-talk26.app.dev-dot.li/#/diagnostico`). |
 | H5 | Medio | Subida a Bulletin: se ignora la clave devuelta y el tope de 90 s es justo |
-| H6 | Medio | Leer un recibo por CID fuera del contenedor probablemente no funciona |
+| H6 | **Medido: menos grave** | El gateway IPFS `devnet-ipfs.api.polkadotcommunity.foundation` **sí** sirve contenido de Bulletin con CID `bafk2bza…` (el ícono subido por `pad`: HTTP 200, 0.34 s, bytes idénticos), aunque la documentación dice que no hay respaldo por gateway. En el gateway web el verificador leyó ese CID en 28 s. Falta confirmarlo con un recibo subido por `submit()` del host. |
 | H7 | Medio | Versiones del SDK sin probar en dispositivo |
 | H8 | Medio | Al diagnóstico le faltan pruebas para H2, H5 y H6 |
 | H9 | Bajo | Exportar el recibo depende de una descarga |

@@ -401,6 +401,31 @@ Límites medidos por otros equipos ([TWR.DOT](https://github.com/TheWhiteRabbitM
 - En el gateway `dev-dot.li`, desde un navegador de escritorio, **no se puede firmar**: `SignerManager` devuelve cero cuentas. Leer sí funciona.
 - `navigateTo` a una URL externa responde `ok` y no abre nada.
 
+## Lo que la documentación no te dice
+
+El Products Devnet está en beta y cambia cada semana: el SDK saca versiones
+casi a diario (`product-sdk-host` pasó de 0.14 a 0.23 entre julio y septiembre
+de 2026), el protocolo entre app y host cambió de códec a mitad de septiembre,
+y la actualización del devnet de ese mes obligó a crear cuentas nuevas y movió
+los contratos de DotNS. La documentación oficial describe el camino ideal y va
+por detrás. Esto es lo que medimos el 25 de septiembre de 2026:
+
+| La documentación dice | Lo que pasó de verdad |
+|---|---|
+| *"Install the latest release of every package"* | Vale para `pad` y `dotns`. Para el SDK de tu app, **no**: el más nuevo habla el códec 2 y Polkadot Desktop 0.1.3 el 1 ([sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo)) |
+| *"Use labels nine characters or longer"* | Se cuenta la base **sin** los dígitos finales: `testalk26` tiene 9 caracteres y pidió personhood ([paso 3](#3-elegir-el-nombre-antes-que-nada)) |
+| *"Reads are container-only; there is no public IPFS-gateway fallback"* | El gateway IPFS del devnet sirvió un CID de Bulletin en 0.3 s |
+| El archivo de configuración publica nombre, descripción e ícono | Con `pad login`, en `pad` 0.16.7 el manifest falla siempre ([paso 6](#el-manifest-puede-fallar-y-la-app-funciona-igual)) |
+| `SignerManager` para conectar la wallet | Entrega una cuenta **derivada para tu app**, no la identidad del usuario |
+| `getHostProvider(genesis)` para leer cadenas | En Desktop 0.1.3 no entregó Asset Hub: hace falta un RPC de respaldo |
+| (no lo menciona) | En Android subir a Bulletin falla; en el gateway web no se puede firmar ([TWR.DOT](https://github.com/TheWhiteRabbitM/TWR.DOT/blob/master/docs/devnet-issues.md)) |
+
+La lección: **no confíes en que algo funciona porque está documentado**.
+Pon una página de diagnóstico en tu app, córrela en el dispositivo real y
+cree lo que mide. Y cuando encuentres una diferencia, repórtala en
+[products-devnet-issues](https://github.com/Polkadot-Community-Foundation/products-devnet-issues):
+así el siguiente estudiante no pierde el mismo día.
+
 ## Errores comunes
 
 | Síntoma | Causa | Qué hacer |

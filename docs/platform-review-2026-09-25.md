@@ -48,11 +48,11 @@ Y el diseño ya sigue lo que TWR midió en el contenedor:
 | # | Gravedad | Hallazgo |
 |---|---|---|
 | H1 | Crítico | El verificador muestra como verificada una identidad que la firma no prueba |
-| H2 | Crítico para el propósito | La firma sale de una cuenta de producto de la app, no de la identidad del speaker |
+| H2 | **Corregido y medido** | El presentador firma con la cuenta dueña del username (`lib/people.ts` + `getLegacyAccountSigner`), con la cuenta de la app de respaldo; el verificador comprueba `UsernameOwnerOf`. **Medido en Desktop 0.1.3: la firma con identidad funciona (13 s)** aunque Desktop no enumera cuentas legacy. |
 | H3 | Bloqueante de deploy | `testalk.dot` requiere Full Personhood |
 | H4 | **Corregido y medido** | QR a `https://devnet-test-talk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Medido tras el deploy: el gateway carga la app en ~9 s y conserva la ruta (`…dev-dot.li/#/diagnostico` abre el iframe `devnet-test-talk26.app.dev-dot.li/#/diagnostico`). |
-| H5 | Medio | Subida a Bulletin: se ignora la clave devuelta y el tope de 90 s es justo |
-| H6 | **Medido: menos grave** | El gateway IPFS `devnet-ipfs.api.polkadotcommunity.foundation` **sí** sirve contenido de Bulletin con CID `bafk2bza…` (el ícono subido por `pad`: HTTP 200, 0.34 s, bytes idénticos), aunque la documentación dice que no hay respaldo por gateway. En el gateway web el verificador leyó ese CID en 28 s. Falta confirmarlo con un recibo subido por `submit()` del host. |
+| H5 | **Corregido y medido** | Se compara la clave devuelta con el blake2b-256 (coincide); tope de 180 s; un reintento busca antes si ya subió. Medido en Desktop 0.1.3: subida en 10 s. |
+| H6 | **Medido: no era problema** | El gateway IPFS sirve lo que sube el host con `submit()`: 58 bytes idénticos en 274 ms (y el ícono de `pad` en 0.34 s). Por el host, 4 ms. La documentación dice que no hay respaldo por gateway; lo hay. |
 | H7 | Medio | Versiones del SDK sin probar en dispositivo |
 | H8 | Medio | Al diagnóstico le faltan pruebas para H2, H5 y H6 |
 | H9 | Bajo | Exportar el recibo depende de una descarga |
@@ -320,6 +320,39 @@ gateway web:
 
 El host responde a todo. Las cuentas y la firma se miden en Polkadot Desktop:
 el gateway web sin sesión no entrega cuentas (TWR.DOT, DEVFEEDBACK #18).
+
+Y en **Polkadot Desktop 0.1.3**, con sesión y **Probar con subida a Bulletin**
+(username y dirección del autor ocultos):
+
+```
+[YES ] Versión del SDK: product-sdk-host 0.19.1 · signer 0.14.4 · truapi 0.13.1 (protocolo 1)
+[YES ] Permiso de red (Remote) (3 ms)
+[YES ] El host sirve Asset Hub (1 ms) / People chain (0 ms)
+[YES ] Micrófono: permiso del host (3272 ms): concedido
+[YES ] Micrófono: grabando 4 s: audio/webm;codecs=opus, 62 KB
+[YES ] Asset Hub: bloque finalizado · por el host
+[SKIP] Hash por altura (cliente principal): el provider no sirve consultas históricas
+[YES ] Hash por altura (con respaldo) (249 ms)
+[YES ] TalkRegistry (cliente principal) (221 ms)
+[SKIP] Cuentas del wallet (getLegacyAccounts): 0 cuentas visibles para la app
+[YES ] Wallet (SignerManager): <username> · 5Fbx…dj4No · firmará con la identidad .dot
+[YES ] Username en People chain (173 ms)
+[YES ] Firma con identidad .dot (signRawWithLegacyAccount) (13099 ms): sr25519
+[YES ] Firma con la cuenta de la app (signRaw) (3831 ms): sr25519
+[YES ] Bulletin: subida y clave (10214 ms): la clave devuelta es el blake2b-256 de los bytes
+[YES ] Bulletin: lectura por el host (4 ms): 58 bytes idénticos
+[YES ] Bulletin: lectura por el gateway IPFS (274 ms): 58 bytes idénticos
+```
+
+Respuestas a [lo que solo se sabía en el dispositivo](#qué-solo-se-sabe-en-el-dispositivo):
+
+1. Handshake: funciona con el códec 1 (con el 2, no).
+2. `signRaw` con la cuenta de producto: levanta la hoja de firma y firma (3.8 s).
+3. Desktop no enumera cuentas legacy (0), pero **firma con la cuenta de identidad** (13 s): el recibo queda ligado al username.
+4. `submit()`: 10 s para 58 bytes (TWR midió 64 s en Desktop 0.1.1); la clave es el blake2b-256 esperado.
+5. `ws://localhost:8787`: pendiente, el transcriptor no estaba corriendo.
+6. Lectura: por el host en 4 ms y por el gateway IPFS en 274 ms. La documentación dice que no hay respaldo por gateway; lo hay.
+7. El gateway conserva `#/<cid>`: sí.
 
 ## Orden sugerido (original)
 

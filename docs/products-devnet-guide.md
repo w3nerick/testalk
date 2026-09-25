@@ -362,7 +362,7 @@ descubrir, con el código de testalk como referencia:
 | Red | Pide el permiso `Remote` con cada dominio externo **al arrancar**. Sin él, `fetch` y WebSocket fallan en silencio | [`lib/permissions.ts`](../app/src/lib/permissions.ts) |
 | Permisos del dispositivo | `Clipboard` para copiar y `OpenUrl` para abrir enlaces externos en el celular | [`lib/permissions.ts`](../app/src/lib/permissions.ts) |
 | Cuentas | `SignerManager` entrega una **cuenta de producto** derivada para tu dominio, no la identidad del usuario. Para firmar como la persona, usa la cuenta dueña de su username en People chain | [`lib/signer.ts`](../app/src/lib/signer.ts), [`lib/people.ts`](../app/src/lib/people.ts) |
-| Bulletin | `requestResourceAllocation([{ tag: 'BulletinAllowance' }])`, luego el permiso `PreimageSubmit` (no `ChainSubmit`), luego `submit()`. Una cuota `NotAvailable` no impide subir. Tarda alrededor de 1 minuto, y los datos se borran a los **14 días**. Para leer fuera del contenedor, el gateway IPFS `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<cid>` sirve contenido de Bulletin (medido con un CID `bafk2bza…` en 0.3 s) | [`lib/bulletin.ts`](../app/src/lib/bulletin.ts) |
+| Bulletin | `requestResourceAllocation([{ tag: 'BulletinAllowance' }])`, luego el permiso `PreimageSubmit` (no `ChainSubmit`), luego `submit()`. Una cuota `NotAvailable` no impide subir. En Polkadot Desktop 0.1.3 subió 58 bytes en 10 s (TWR midió 64 s en la 0.1.1), y los datos se borran a los **14 días**. Para leer fuera del contenedor, el gateway IPFS `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<cid>` sirve contenido de Bulletin (medido con un CID `bafk2bza…` en 0.3 s) | [`lib/bulletin.ts`](../app/src/lib/bulletin.ts) |
 | Cadenas | `getHostProvider(genesis)` dentro del contenedor, RPC público fuera | [`lib/chain.ts`](../app/src/lib/chain.ts) |
 | Enlaces y QR | `https://nombre.dev-dot.li/...` abre en cualquier celular; `nombre.dot` solo dentro de Polkadot App | [`views/presenter.ts`](../app/src/views/presenter.ts) |
 | Diagnóstico | Una página que pruebe cada pieza **en el dispositivo real** y dé un reporte copiable. Te ahorra días de adivinar | [`views/diagnostics.ts`](../app/src/views/diagnostics.ts) |
@@ -414,9 +414,9 @@ por detrás. Esto es lo que medimos el 25 de septiembre de 2026:
 |---|---|
 | *"Install the latest release of every package"* | Vale para `pad` y `dotns`. Para el SDK de tu app, **no**: el más nuevo habla el códec 2 y Polkadot Desktop 0.1.3 el 1 ([sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo)) |
 | *"Use labels nine characters or longer"* | Se cuenta la base **sin** los dígitos finales: `testalk26` tiene 9 caracteres y pidió personhood ([paso 3](#3-elegir-el-nombre-antes-que-nada)) |
-| *"Reads are container-only; there is no public IPFS-gateway fallback"* | El gateway IPFS del devnet sirvió un CID de Bulletin en 0.3 s |
+| *"Reads are container-only; there is no public IPFS-gateway fallback"* | El gateway IPFS del devnet sirvió lo que subió el host con `submit()` en 274 ms, byte por byte |
 | El archivo de configuración publica nombre, descripción e ícono | Con `pad login`, en `pad` 0.16.7 el manifest falla siempre ([paso 6](#el-manifest-puede-fallar-y-la-app-funciona-igual)) |
-| `SignerManager` para conectar la wallet | Entrega una cuenta **derivada para tu app**, no la identidad del usuario |
+| `SignerManager` para conectar la wallet | Entrega una cuenta **derivada para tu app**, no la identidad del usuario. Para firmar como la persona: username → dueño en People chain → `getLegacyAccountSigner(...).signBytes`; en Desktop 0.1.3 funciona (13 s) aunque `getLegacyAccounts()` devuelva 0 cuentas |
 | `getHostProvider(genesis)` para leer cadenas | En Desktop 0.1.3 no entregó Asset Hub: hace falta un RPC de respaldo |
 | (no lo menciona) | En Android subir a Bulletin falla; en el gateway web no se puede firmar ([TWR.DOT](https://github.com/TheWhiteRabbitM/TWR.DOT/blob/master/docs/devnet-issues.md)) |
 

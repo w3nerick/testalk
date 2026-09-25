@@ -16,7 +16,9 @@
  * un navegador normal; el recibo sale marcado como ensayo.
  */
 import { getAccountsProvider, isInsideContainerSync } from '@parity/product-sdk-host';
-import type { SignerManager as SM } from '@parity/product-sdk-signer';
+// Import estático a propósito: en el gateway dev-dot.li un chunk que se baja al pulsar
+// "Conectar" falló con "Failed to fetch dynamically imported module".
+import { SignerManager, type SignerManager as SM } from '@parity/product-sdk-signer';
 import type { PolkadotSigner } from 'polkadot-api';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress } from '@polkadot/util-crypto';
@@ -66,7 +68,6 @@ export async function connectSpeaker(): Promise<Speaker> {
   const inside = isInsideContainerSync();
   if (inside && !(await waitForHost())) throw new Error(`No hay canal con Polkadot App. Abre ${APP_DOTNS} desde la app.`);
 
-  const { SignerManager } = await import('@parity/product-sdk-signer');
   manager ??= new SignerManager({ dappName: APP_DOTNS });
 
   // Además de la cuenta de la app, connect() pide el permiso ChainSubmit: sin él

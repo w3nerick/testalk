@@ -8,7 +8,7 @@ import { cryptoWaitReady, encodeAddress, signatureVerify } from '@polkadot/util-
 import { hexToU8a } from '@polkadot/util';
 import { icon } from '../lib/icons';
 import { waitForHost, withTimeout, TIMED_OUT, describeError, HOST_QUERY_MS } from '../lib/host';
-import { ASSET_HUB_GENESIS, getClient, hashVia, hashAtHeight, subscribeFinalized, type Block } from '../lib/chain';
+import { ASSET_HUB_GENESIS, chainSource, getClient, hashVia, hashAtHeight, subscribeFinalized, type Block } from '../lib/chain';
 import { connectSpeaker, currentSpeaker, hasIdentitySigner, identityUnavailableReason, keyFor, signBytes, type SignerKind } from '../lib/signer';
 import { lookupViaHost, prepareBulletin, uploadArtifact, viaGateway } from '../lib/bulletin';
 import { cidForBytes } from '../lib/artifact';
@@ -120,7 +120,8 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
       first = await new Promise<Block | null>(resolve => {
         let unsub: (() => void) | undefined;
         let got: Block | null = null;
-        const t = setTimeout(() => { unsub?.(); resolve(null); }, 30_000);
+        // 45 s: el vigilante de chain.ts cambia al RPC público a los 30 s si el host no da bloques.
+        const t = setTimeout(() => { unsub?.(); resolve(null); }, 45_000);
         subscribeFinalized(
           b => {
             if (got) return;
@@ -134,7 +135,9 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
           .then(u => { unsub = u; if (got) u(); })
           .catch(() => resolve(null));
       });
-      return first ? ['yes', `#${(first as Block).number.toLocaleString('en-US')}`] : ['no', 'ningún bloque en 30 s'];
+      const { source, hostProblem } = chainSource();
+      const how = source === 'host' ? 'por el host' : `por RPC público${hostProblem ? ` (${hostProblem})` : ''}`;
+      return first ? ['yes', `#${(first as Block).number.toLocaleString('en-US')} · ${how}`] : ['no', `ningún bloque en 45 s · ${how}`];
     });
 
     if (first) {

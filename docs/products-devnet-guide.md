@@ -309,13 +309,33 @@ descubrir, con el código de testalk como referencia:
 | Enlaces y QR | `https://nombre.dev-dot.li/...` abre en cualquier celular; `nombre.dot` solo dentro de Polkadot App | [`views/presenter.ts`](../app/src/views/presenter.ts) |
 | Diagnóstico | Una página que pruebe cada pieza **en el dispositivo real** y dé un reporte copiable. Te ahorra días de adivinar | [`views/diagnostics.ts`](../app/src/views/diagnostics.ts) |
 
-Genesis de las cadenas del devnet:
+### Las redes del devnet
 
-| Cadena | Genesis |
+El Products Devnet corre sobre **Paseo**. Los smart contracts viven en el
+**Asset Hub de Paseo** con **pallet-revive** (PolkaVM y EVM), la misma cadena
+donde están los contratos de DotNS.
+
+| Cadena | Genesis | Para qué |
+|---|---|---|
+| Asset Hub (para 1000) | `0xd6eec26135305a8ad257a20d003357284c8aa03d0bdb2b357ab0a22371e11ef2` | Contratos, DotNS, bloques |
+| People (para 1004) | `0xe6c30d6e148f250b887105237bcaa5cb9f16dd203bf7b5b9d4f1da7387cb86ec` | Usernames y personhood |
+| Bulletin (para 1010) | `0xe101f0fa4627d29a257645e02be86d80378fea1a2bf8fa6a918d150ebc760a59` | Almacenamiento de apps y datos (14 días) |
+
+Para contratos:
+
+| Dato | Valor |
 |---|---|
-| Asset Hub | `0xd6eec26135305a8ad257a20d003357284c8aa03d0bdb2b357ab0a22371e11ef2` |
-| People | `0xe6c30d6e148f250b887105237bcaa5cb9f16dd203bf7b5b9d4f1da7387cb86ec` |
-| Bulletin | `0xe101f0fa4627d29a257645e02be86d80378fea1a2bf8fa6a918d150ebc760a59` |
+| EVM chain ID | `420420417` (comprobado con `eth_chainId` el 25 sep 2026) |
+| RPC Ethereum | `https://eth-rpc-testnet.polkadot.io` |
+| RPC Substrate | `wss://asset-hub-paseo-rpc.n.dwellir.com`, `wss://sys.turboflakes.io/asset-hub-paseo` |
+| Token | PAS, 10 decimales ([faucet](https://faucet.polkadot.io)) |
+
+No lo confundas con **Paseo Next** (`paseo-next-v2`): es otra red, con otro
+Asset Hub, y es la que usan `pad` y `dotns` si olvidas `--env devnet`.
+
+Dentro del contenedor, pide cada cadena al host con `getHostProvider(genesis)`
+y ten un **RPC público de respaldo**: el host puede tardar o no entregarla, y
+los hashes y contratos son los mismos por cualquier camino.
 
 Límites medidos por otros equipos ([TWR.DOT](https://github.com/TheWhiteRabbitM/TWR.DOT/blob/master/docs/devnet-issues.md)):
 

@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { icon } from '../lib/icons';
-import { ASSET_HUB_GENESIS, NETWORK, subscribeFinalized, type Block } from '../lib/chain';
+import { ASSET_HUB_GENESIS, NETWORK, chainSource, subscribeFinalized, type Block } from '../lib/chain';
 import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type AudioSeal, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
 import { connectSpeaker, currentSpeaker, identityUnavailableReason, signBytes, useAppAccount, type Speaker } from '../lib/signer';
 import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
@@ -154,7 +154,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const drawChain = () => {
       chainRow.className = `check-row ${latest ? 'ok' : ''}`;
       chainRow.innerHTML = latest
-        ? `${tag('ok')}<div class="grow">Asset Hub conectado<div class="muted mono" style="font-size:12.5px">bloque #${latest.number.toLocaleString('en-US')}</div></div>`
+        ? `${tag('ok')}<div class="grow">Asset Hub conectado<div class="muted mono" style="font-size:12.5px">bloque #${latest.number.toLocaleString('en-US')} · ${via()}</div></div>`
         : chainError
           ? `${tag('warn')}<div class="grow">Sin conexión a la red<div class="muted" style="font-size:13px">${esc(chainError)}</div></div>`
           : `${tag('wait')}<div class="grow">Conectando a Asset Hub</div>`;
@@ -437,6 +437,13 @@ export function renderPresenter(root: HTMLElement): Cleanup {
 
   setup();
   return () => cleanups.forEach(f => { try { f(); } catch { /* ya cerrado */ } });
+}
+
+/** Por dónde llegan los bloques: el host, o el RPC público si el host no los entregó. */
+function via(): string {
+  const { source, hostProblem } = chainSource();
+  if (source === 'host') return 'por el host';
+  return hostProblem ? `por RPC público (${esc(hostProblem)})` : 'por RPC público';
 }
 
 /** Con qué llave se va a firmar, dicho sin rodeos: es lo que el verificador podrá comprobar. */

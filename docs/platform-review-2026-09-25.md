@@ -303,6 +303,24 @@ Mientras Asset Hub no llegó por el host, el respaldo a RPC público (commit
 `f6773fb`) mantuvo la app conectada: los bloques, la lectura por altura y
 `TalkRegistry` funcionaron igual.
 
+Después del cambio (deploy `bafybeibilib4…l4e35ui`), el mismo diagnóstico en el
+gateway web:
+
+```
+[YES ] Versión del SDK: product-sdk-host 0.19.1 · signer 0.14.4 · truapi 0.13.1 (protocolo 1)
+[YES ] Permiso de red (Remote) (13 ms)
+[YES ] El host sirve Asset Hub (1 ms): isChainSupported: sí
+[YES ] El host sirve People chain: isChainSupported: sí
+[YES ] Asset Hub: bloque finalizado (1661 ms) · por el host
+[SKIP] Hash por altura (cliente principal): el provider no sirve consultas históricas
+[YES ] Hash por altura (con respaldo) (1335 ms)
+[YES ] TalkRegistry (cliente principal) (5302 ms)
+[SKIP] Cuentas del wallet (getLegacyAccounts): 0 cuentas visibles para la app
+```
+
+El host responde a todo. Las cuentas y la firma se miden en Polkadot Desktop:
+el gateway web sin sesión no entrega cuentas (TWR.DOT, DEVFEEDBACK #18).
+
 ## Orden sugerido (original)
 
 1. H1: corregir el verificador (no depende del dispositivo).

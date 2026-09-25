@@ -151,6 +151,8 @@ testalk/
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
 │   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
+│   │   │   ├── mic.ts          Micrófono de la app: detector de voz, Whisper y WAV
+│   │   │   ├── whisper.worker.ts  Whisper en un hilo aparte (la interfaz no se congela)
 │   │   │   ├── host.ts         waitForHost + timeouts para toda llamada al host
 │   │   │   └── ascii.ts        Onda de voz, sello y barras en ASCII
 │   │   ├── views/              Inicio, presentador, verificador y diagnóstico
@@ -273,7 +275,8 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Firmar con la identidad `.dot` (username → People chain → cuenta dueña), con la cuenta de la app de respaldo
 - [ ] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): lo mide `#/diagnostico`
 - [x] Comparar un WAV contra la huella desde el verificador
-- [ ] Grabar y transcribir **dentro de la app** (permiso `Microphone` + Whisper con WebGPU), sin el script de Python. El diagnóstico ya mide si el dispositivo lo permite
+- [x] Grabar y transcribir **dentro de la app**, sin el script de Python: micrófono del contenedor + Whisper base en un Web Worker (WebGPU o WebAssembly), con botón y tecla **M** para encender o apagar el micrófono
+- [ ] Probar el micrófono de la app en una charla real en Polkadot Desktop
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin
 
 ## Créditos

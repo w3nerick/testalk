@@ -365,6 +365,8 @@ descubrir, con el código de testalk como referencia:
 | Bulletin | `requestResourceAllocation([{ tag: 'BulletinAllowance' }])`, luego el permiso `PreimageSubmit` (no `ChainSubmit`), luego `submit()`. Una cuota `NotAvailable` no impide subir. En Polkadot Desktop 0.1.3 subió 58 bytes en 10 s (TWR midió 64 s en la 0.1.1), y los datos se borran a los **14 días**. Para leer fuera del contenedor, el gateway IPFS `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<cid>` sirve contenido de Bulletin (medido con un CID `bafk2bza…` en 0.3 s) | [`lib/bulletin.ts`](../app/src/lib/bulletin.ts) |
 | Cadenas | `getHostProvider(genesis)` dentro del contenedor, RPC público fuera | [`lib/chain.ts`](../app/src/lib/chain.ts) |
 | Enlaces y QR | `https://nombre.dev-dot.li/...` abre en cualquier celular; `nombre.dot` solo dentro de Polkadot App | [`views/presenter.ts`](../app/src/views/presenter.ts) |
+| Micrófono | `requestDevicePermission('Microphone')` y luego `getUserMedia`. En Polkadot Desktop 0.1.3 funciona, y el permiso queda en Ajustes → Permisos → Micrófono. Para apagarlo de verdad, detén las pistas del `MediaStream` | [`lib/mic.ts`](../app/src/lib/mic.ts) |
+| Trabajo pesado (IA, criptografía) | Hazlo en un **Web Worker**: Whisper en el hilo principal congelaba la página hasta 90 s; en un worker, 0-2 ms | [`lib/whisper.worker.ts`](../app/src/lib/whisper.worker.ts) |
 | Diagnóstico | Una página que pruebe cada pieza **en el dispositivo real** y dé un reporte copiable. Te ahorra días de adivinar | [`views/diagnostics.ts`](../app/src/views/diagnostics.ts) |
 
 ### Las redes del devnet

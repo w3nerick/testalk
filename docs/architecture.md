@@ -25,6 +25,19 @@ flowchart LR
 
 ## Componentes
 
+### Dos formas de transcribir
+
+| | Script de Python (`stt/`) | Micrófono de la app (`lib/mic.ts`) |
+|---|---|---|
+| Qué instalar | Python 3.10+ y `faster-whisper` | Nada: se baja Whisper la primera vez (~80-200 MB) |
+| Modelo | `small` (mejor en español) | `base` |
+| Dónde corre | CPU de la laptop | El navegador de Polkadot Desktop (WebGPU si hay) |
+| Audio | WAV en `stt/grabaciones/` | WAV en memoria, se descarga al sellar |
+| Cuándo usarlo | Charlas largas o jerga técnica | Probar rápido, o cuando no se puede instalar nada |
+
+La preparación ofrece el micrófono de la app si el script no está conectado.
+Solo uno transcribe a la vez.
+
 ### `stt/` Transcriptor local
 
 Python, fuera del navegador, por dos razones: Whisper necesita CPU y memoria
@@ -57,6 +70,8 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | `lib/bulletin.ts` | Cuota y permiso `PreimageSubmit` al empezar la charla; `submit()` al sellar, con 180 s de tope, comprobando que la clave devuelta sea el blake2b-256 de los bytes y, en un reintento, buscando antes si ya subió. Lectura con `lookup()` (ignorando los `null` intermedios) y respaldo por el gateway IPFS, comprobando que los bytes correspondan al CID. |
 | `lib/artifact.ts` | Tipos del recibo, validación de forma, bytes canónicos, CID, verificación de firma, de identidad y de bloques. Es el módulo que comparten la app y el CLI. |
 | `lib/stt.ts` | Cliente WebSocket del transcriptor con reconexión y petición de sellado. |
+| `lib/whisper.worker.ts` | Whisper en un Web Worker. En el hilo principal la inferencia congelaba la página hasta 90 s; en el worker la interfaz responde en 0-2 ms. Si el contenedor no deja crear workers, `mic.ts` lo carga en el hilo principal. |
+| `lib/mic.ts` | Transcripción **dentro de la app**, sin Python: micrófono del contenedor (`requestDevicePermission('Microphone')` + `getUserMedia`), detector de voz por energía con los mismos tiempos que el script (90 ms / 510 ms / 12 s), Whisper base con `transformers.js` (WebGPU o WebAssembly) una frase a la vez, con `no_repeat_ngram_size: 3`, un tope de tokens por segundo de audio y un filtro que descarta los bucles típicos de Whisper ("cadena cadena cadena…"). El micrófono se apaga de verdad (suelta el dispositivo) con el botón o la tecla **M**; lo dicho apagado no entra al WAV. El audio completo va en WAV PCM16 a 16 kHz para la huella del recibo. El modelo se baja de Hugging Face la primera vez y queda en la caché. |
 
 ## Flujo del presentador
 

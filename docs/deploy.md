@@ -75,6 +75,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 
 **Una hora antes**
 - [ ] Laptop conectada a corriente y a una red estable
+- [ ] Si usas el **micrófono de la app**: en `#/presentar`, **Usar el micrófono de la app** para precargar Whisper (la primera vez baja 80-200 MB) y habla hasta ver "Te escuché: «…»". Si usas el script de Python, los tres puntos siguientes
 - [ ] Micrófono correcto (`--list-mics`); sin audífonos Bluetooth robando la entrada
 - [ ] Transcriptor arrancado y con el modelo caliente
 - [ ] Polkadot Desktop abierto en `devnet-test-talk26.dot/#/presentar`
@@ -82,9 +83,10 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Las tres filas de preparación en verde
 
 **Al terminar**
+- [ ] Durante la charla, **M** apaga o enciende el micrófono de la app (lo dicho apagado no entra al recibo)
 - [ ] Pulsar **Sellar charla** y aprobar la firma en el celular
 - [ ] Dejar el QR en pantalla el tiempo suficiente para que escaneen
-- [ ] Descargar el JSON y guardar el WAV de `stt/grabaciones/`: Bulletin borra a los 14 días
+- [ ] Descargar el JSON y el WAV (**Audio WAV** si usaste el micrófono de la app, o `stt/grabaciones/` si usaste Python): Bulletin borra a los 14 días
 - [ ] Anclar el recibo ese mismo día: `cd contract && npm run anchor -- <recibo.json>`
 
 ## Comportamiento conocido del devnet

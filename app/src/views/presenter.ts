@@ -7,6 +7,8 @@ import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin
 import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
 import { requestHostPermissions } from '../lib/permissions';
 import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
+import { InAppMic, loadWhisper, whisperBackend, type LoadProgress } from '../lib/mic';
+import { asciiBar } from '../lib/ascii';
 import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
 import { setLocalArtifact } from './verifier';
 
@@ -48,17 +50,68 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let audioSeal: AudioSeal | null | undefined;
 
   // El transcriptor corre en localhost: ese permiso se pide aquí y no al arrancar.
-  requestHostPermissions({ localhost: true });
+  requestHostPermissions({ presenter: true });
 
   // El transcriptor se conecta desde la pantalla de preparación: así se ve si
   // está vivo antes de empezar.
   const sttListeners = new Set<(s: SttStatus) => void>();
   const sentenceListeners = new Set<(t: string) => void>();
-  startStt({
-    onStatus: s => { sttStatus = s; sttListeners.forEach(f => f(s)); },
-    onSentence: t => sentenceListeners.forEach(f => f(t)),
-  });
+  const sttHandlers = {
+    onStatus: (s: SttStatus) => { sttStatus = s; sttListeners.forEach(f => f(s)); },
+    onSentence: (t: string) => sentenceListeners.forEach(f => f(t)),
+  };
+  startStt(sttHandlers);
   cleanups.push(stopStt);
+
+  // Micrófono de la app (Whisper en el navegador): alternativa al script de Python.
+  let appMic: InAppMic | null = null;
+  let appWav: Blob | null = null;
+  let micState: 'off' | 'loading' | 'ready' | 'error' = 'off';
+  let micNote = '';
+  let micProgress: LoadProgress | null = null;
+  let heard = '';
+  const micListeners = new Set<() => void>();
+  const levelListeners = new Set<(db: number, speaking: boolean) => void>();
+  const micChanged = () => micListeners.forEach(f => f());
+  cleanups.push(() => appMic?.close());
+
+  /** Enciende o apaga el micrófono de la app. */
+  async function toggleMic() {
+    if (!appMic) return;
+    try {
+      if (appMic.isPaused()) await appMic.resume();
+      else appMic.pause();
+    } catch (e) {
+      toast(`No se pudo encender el micrófono: ${(e as Error).message}`);
+    }
+    micChanged();
+  }
+
+  /** Abre el micrófono (con el gesto del botón) y carga Whisper. Un solo transcriptor a la vez. */
+  async function enableAppMic(lang: string) {
+    micState = 'loading';
+    micNote = '';
+    micProgress = null;
+    micChanged();
+    stopStt();
+    const mic = new InAppMic(lang, {
+      onSentence: t => { heard = t; sentenceListeners.forEach(f => f(t)); micChanged(); },
+      onLevel: (db, speaking) => levelListeners.forEach(f => f(db, speaking)),
+      onError: m => console.warn('[mic]', m),
+    });
+    try {
+      await mic.open();
+      await loadWhisper(p => { micProgress = p; micChanged(); });
+      appMic = mic;
+      micState = 'ready';
+    } catch (e) {
+      mic.close();
+      micState = 'error';
+      micNote = (e as Error).message;
+      startStt(sttHandlers);
+    }
+    micChanged();
+  }
 
   // Bloques desde ya: el primer ancla necesita un bloque previo a la primera frase.
   const blockListeners = new Set<(b: Block) => void>();
@@ -142,14 +195,42 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         }
       });
     };
-    const drawStt = (s: SttStatus) => {
-      sttRow.className = `check-row ${s === 'on' ? 'ok' : ''}`;
-      sttRow.innerHTML =
-        s === 'on'
-          ? `${tag('ok')}<div class="grow">Transcriptor conectado<div class="muted" style="font-size:13px">Escuchando el micrófono</div></div>`
-          : `${tag('idle')}<div class="grow">Transcriptor apagado
-               <div><code>python stt/testalk_stt.py --language ${esc((root.querySelector('#lang') as HTMLSelectElement)?.value ?? 'es')}</code></div>
-               <div class="muted" style="font-size:13px">Opcional: también puedes escribir frases a mano.</div></div>`;
+    const drawStt = (s: SttStatus = sttStatus) => {
+      const lang = (root.querySelector('#lang') as HTMLSelectElement)?.value ?? 'es';
+      if (micState === 'ready') {
+        const off = appMic?.isPaused() ?? false;
+        sttRow.className = `check-row ${off ? '' : 'ok'}`;
+        sttRow.innerHTML = `${tag(off ? 'idle' : 'ok')}<div class="grow">${off ? 'Micrófono de la app apagado' : 'Micrófono de la app listo'}
+          <div class="muted" style="font-size:13px">Whisper base · ${whisperBackend() === 'webgpu' ? 'WebGPU' : 'WebAssembly'}${off ? '' : ' · <span class="mono" id="mic-lvl"></span>'}</div>
+          <div class="muted" style="font-size:13px">${off ? 'Enciéndelo para probar.' : heard ? `Te escuché: «${esc(heard)}»` : 'Di algo para probarlo.'}</div></div>
+          ${micButton(off, 'sm')}`;
+        sttRow.querySelector('#mic-toggle')?.addEventListener('click', toggleMic);
+        return;
+      }
+      if (micState === 'loading') {
+        const p = micProgress;
+        sttRow.className = 'check-row';
+        sttRow.innerHTML = `${tag('wait')}<div class="grow">Preparando el micrófono de la app
+          <div class="muted mono" style="font-size:12.5px">${p && p.total
+            ? `${asciiBar(p.loaded, p.total)} ${Math.round(p.progress)} % · ${Math.round(p.loaded / 1e6)} de ${Math.round(p.total / 1e6)} MB`
+            : 'Permiso del micrófono y descarga de Whisper (solo la primera vez)'}</div></div>`;
+        return;
+      }
+      if (s === 'on') {
+        sttRow.className = 'check-row ok';
+        sttRow.innerHTML = `${tag('ok')}<div class="grow">Transcriptor conectado<div class="muted" style="font-size:13px">Escuchando el micrófono de la laptop</div></div>`;
+        return;
+      }
+      sttRow.className = 'check-row';
+      sttRow.innerHTML = `${tag(micState === 'error' ? 'warn' : 'idle')}<div class="grow">Transcripción
+          <div class="muted" style="font-size:13px">${micState === 'error' ? `No se pudo usar el micrófono de la app: ${esc(micNote)}` : 'La app puede escuchar y transcribir sola, sin instalar nada.'}</div>
+          <div class="muted" style="font-size:12.5px">O en la laptop: <code>python stt/testalk_stt.py --language ${esc(lang)}</code></div></div>
+        <button class="btn sm primary" id="use-mic">${icon('microphone')}Usar el micrófono de la app</button>`;
+      sttRow.querySelector('#use-mic')?.addEventListener('click', () => enableAppMic(lang));
+    };
+    const showLevel = (db: number) => {
+      const el = root.querySelector('#mic-lvl');
+      if (el) el.textContent = levelBar(db);
     };
     const drawChain = () => {
       chainRow.className = `check-row ${latest ? 'ok' : ''}`;
@@ -164,11 +245,18 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     drawChain();
     sttListeners.add(drawStt);
     chainStatus.add(drawChain);
+    const redrawStt = () => drawStt();
+    micListeners.add(redrawStt);
+    levelListeners.add(showLevel);
     root.querySelector('#lang')!.addEventListener('change', () => drawStt(sttStatus));
 
     const go = (resume: boolean) => {
       sttListeners.delete(drawStt);
       chainStatus.delete(drawChain);
+      micListeners.delete(redrawStt);
+      levelListeners.delete(showLevel);
+      // La grabación que se sella empieza aquí, no cuando se abrió el micrófono.
+      appMic?.resetRecording();
       draft.title = (root.querySelector('#title') as HTMLInputElement).value.trim() || 'Charla sin título';
       draft.venue = (root.querySelector('#venue') as HTMLInputElement).value.trim();
       draft.lang = (root.querySelector('#lang') as HTMLSelectElement).value;
@@ -201,6 +289,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
             <span class="pill" id="stt-pill"></span>
             <span class="pill live" id="blk-pill">■ <span id="blk-n">…</span></span>
           </div>
+          ${appMic ? `<div class="card" id="mic-card"></div>` : ''}
           <div class="card stats">
             <div class="stat"><b id="st-time">0:00</b><span>duración</span></div>
             <div class="stat"><b id="st-s">0</b><span>frases</span></div>
@@ -282,11 +371,41 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       counts();
       saveDraft(draft);
     };
+    const micCard = root.querySelector<HTMLElement>('#mic-card');
     const drawStt = (s: SttStatus) => {
+      if (appMic) {
+        const off = appMic.isPaused();
+        sttPill.className = `pill ${off ? 'off' : 'on'}`;
+        sttPill.innerHTML = off
+          ? `${icon('microphoneSlash')}micrófono apagado`
+          : `<i class="mono" id="live-lvl" aria-hidden="true">${levelBar(-90)}</i>escuchando`;
+        if (micCard) {
+          micCard.innerHTML = `${micButton(off, 'block')}
+            <p class="faint" style="font-size:13px;margin:10px 0 0">Tecla <span class="mono">M</span>. Lo que digas con el micrófono apagado no entra al recibo.</p>`;
+          micCard.querySelector('#mic-toggle')?.addEventListener('click', toggleMic);
+        }
+        return;
+      }
       sttPill.className = `pill ${s === 'on' ? 'on' : 'off'}`;
       sttPill.innerHTML = s === 'on' ? `<i class="ameter" aria-hidden="true"></i>escuchando` : `${icon('microphoneSlash')}sin transcriptor`;
     };
     drawStt(sttStatus);
+    const liveLevel = (db: number) => {
+      const el = root.querySelector('#live-lvl');
+      if (el) el.textContent = levelBar(db);
+    };
+    levelListeners.add(liveLevel);
+    const redrawLive = () => drawStt(sttStatus);
+    micListeners.add(redrawLive);
+    // Tecla M: encender o apagar sin buscar el botón (no mientras se escribe una frase a mano).
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key.toLowerCase() !== 'm' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if ((ev.target as HTMLElement)?.closest('input, textarea, select')) return;
+      ev.preventDefault();
+      void toggleMic();
+    };
+    document.addEventListener('keydown', onKey);
+    cleanups.push(() => document.removeEventListener('keydown', onKey));
     if (latest) blkN.textContent = `#${latest.number.toLocaleString('en-US')}`;
     sentenceListeners.add(onSentence);
     blockListeners.add(onBlock);
@@ -305,14 +424,24 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       inp.value = '';
     });
 
-    root.querySelector('#seal')!.addEventListener('click', () => {
-      if (!draft.chain.some(e => 's' in e)) return toast('Todavía no hay nada que sellar');
+    detachLive = () => {
       sentenceListeners.delete(onSentence);
       blockListeners.delete(onBlock);
+      levelListeners.delete(liveLevel);
+      micListeners.delete(redrawLive);
+      document.removeEventListener('keydown', onKey);
+    };
+    root.querySelector('#seal')!.addEventListener('click', () => {
+      if (!draft.chain.some(e => 's' in e)) return toast('Todavía no hay nada que sellar');
       clearInterval(timer);
+      // Con el micrófono de la app, las últimas frases se siguen transcribiendo mientras
+      // se cierra la grabación: se desengancha después, en seal().
+      if (!appMic) detachLive();
       seal(root.querySelector<HTMLElement>('#seal-box')!);
     });
   }
+
+  let detachLive: () => void = () => undefined;
 
   async function seal(box: HTMLElement) {
     const sp = currentSpeaker()!;
@@ -350,8 +479,16 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       if (signed) return await upload(box, draw, bulletin);
       draw(step);
       if (audioSeal === undefined) {
-        audioSeal = await sealAudio();
-        stopStt();
+        if (appMic) {
+          const r = await appMic.stop();
+          appWav = r.wav;
+          audioSeal = r.seal;
+          appMic = null;
+        } else {
+          audioSeal = await sealAudio();
+          stopStt();
+        }
+        detachLive();
       }
       const audio = audioSeal;
 
@@ -426,10 +563,19 @@ export function renderPresenter(root: HTMLElement): Cleanup {
           <a class="btn sm" href="#/verificar">${icon('shieldCheck')}Verificar</a>
           <button class="btn sm" id="dl">${icon('downloadSimple')}JSON</button>
           <button class="btn sm" id="cj">${icon('copy')}Copiar JSON</button>
+          ${appWav ? `<button class="btn sm" id="wav">${icon('downloadSimple')}Audio WAV</button>` : ''}
           ${onBulletin ? `<button class="btn sm" id="cp">${icon('copy')}Enlace</button>` : ''}
         </div>
       </div>`;
     box.querySelector('#dl')!.addEventListener('click', () => downloadJson(artifact, cid));
+    box.querySelector('#wav')?.addEventListener('click', () => {
+      // La huella del recibo es la de este archivo: guárdalo sin convertirlo.
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(appWav!);
+      a.download = `testalk-${cid.slice(-10)}.wav`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
     // Respaldo de la descarga: en el celular un <a download> puede no hacer nada.
     box.querySelector('#cj')!.addEventListener('click', () => copyText(JSON.stringify(artifact), 'JSON copiado'));
     box.querySelector('#cp')?.addEventListener('click', () => copyText(url, 'Enlace copiado'));
@@ -437,6 +583,18 @@ export function renderPresenter(root: HTMLElement): Cleanup {
 
   setup();
   return () => cleanups.forEach(f => { try { f(); } catch { /* ya cerrado */ } });
+}
+
+function micButton(off: boolean, size: 'sm' | 'block'): string {
+  const cls = size === 'sm' ? 'btn sm' : `btn block ${off ? 'primary' : ''}`;
+  return `<button class="${cls}" id="mic-toggle" aria-pressed="${!off}">${icon(off ? 'microphone' : 'microphoneSlash')}${off ? 'Encender micrófono' : 'Apagar micrófono'}</button>`;
+}
+
+/** Nivel del micrófono en texto: `▁▂▃▅▆▇` de -60 a -10 dBFS. */
+function levelBar(db: number): string {
+  const steps = '▁▂▃▄▅▆▇█';
+  const n = Math.max(0, Math.min(8, Math.round(((db + 60) / 50) * 8)));
+  return steps.slice(0, Math.max(1, n)).padEnd(8, ' ');
 }
 
 /** Por dónde llegan los bloques: el host, o el RPC público si el host no los entregó. */

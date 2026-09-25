@@ -39,7 +39,7 @@ const KNOWN_SEAL = '0xaa92853edc1f3e59d3dacc1ff0d2517f70ddf7787cc23dd554ebca3847
 export function renderDiagnostics(root: HTMLElement): Cleanup {
   const lines: Line[] = [];
   let dead = false;
-  requestHostPermissions({ localhost: true });
+  requestHostPermissions({ presenter: true });
 
   root.innerHTML = `${topbar()}
     <main class="shell verify">

@@ -5,8 +5,9 @@
  * un dominio no aprobado falla en silencio (TWR.DOT, docs/devnet-issues.md).
  * Pedirlos a mitad de un gesto ya es tarde. Fuera del contenedor no hace nada.
  *
- * `localhost` (el transcriptor) solo lo piden el presentador y el diagnóstico:
- * quien abre un QR para verificar no tiene por qué ver esa petición.
+ * `localhost` (el transcriptor) y los dominios de Whisper solo los piden el
+ * presentador y el diagnóstico: quien abre un QR para verificar no tiene por
+ * qué ver esa petición.
  */
 import { isInsideContainerSync, requestDevicePermission, requestPermission } from '@parity/product-sdk-host';
 import { waitForHost } from './host';
@@ -16,14 +17,18 @@ const host = (u: string) => new URL(u).hostname;
 /** Gateway IPFS, RPC públicos de Asset Hub y de People chain: respaldos de lectura. */
 const BASE = [host(IPFS_GATEWAY), ...PUBLIC_WS.map(host), ...PEOPLE_WS.map(host)];
 
-export function remoteDomains(localhost: boolean): string[] {
-  return localhost ? ['localhost', ...BASE] : BASE;
+/** Whisper en la app: modelo de Hugging Face (y su CDN) y el motor ONNX de jsDelivr. */
+const WHISPER = ['huggingface.co', 'us.aws.cdn.hf.co', 'cas-bridge.xethub.hf.co', 'cdn-lfs.hf.co', 'cdn.jsdelivr.net'];
+
+export function remoteDomains(presenter: boolean): string[] {
+  return presenter ? ['localhost', ...BASE, ...WHISPER] : BASE;
 }
 
 const asked = new Map<boolean, Promise<void>>();
 
-export function requestHostPermissions(opts: { localhost?: boolean } = {}): Promise<void> {
-  const localhost = opts.localhost ?? false;
+/** `presenter`: además `localhost` (transcriptor de Python) y los dominios de Whisper en la app. */
+export function requestHostPermissions(opts: { presenter?: boolean } = {}): Promise<void> {
+  const localhost = opts.presenter ?? false;
   let p = asked.get(localhost);
   if (!p) {
     p = (async () => {

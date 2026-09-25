@@ -288,6 +288,24 @@ contenido nuevo. Como el nombre ya es tuyo, esta vez avisa
 *"You already own … updating its content needs your signature"* y te pide
 **una firma en el celular**.
 
+Así se ve (salida real de la segunda publicación de testalk):
+
+```
+   Domain: owned by you
+   DotNS: you already own devnet-test-talk26.dot — content update needs your phone signature (no transfer)
+   Incremental: previous contenthash bafybeigramb…3urm
+   Files:         15 unchanged, 2 changed (88 % stable)
+   You already own devnet-test-talk26.dot — updating its content needs your signature.
+   Check your phone → Link content
+   Press Y when ready — you'll have ~90s to approve on your phone (Ctrl-C to abort):
+   > Y
+   Verified on-chain: bafybeifr4aj4nawpm7hdywg3weoaeqzdiaez4c3bduduukrhz2g4qmoxpu
+```
+
+1. Ten el celular a la mano con Polkadot App abierta.
+2. Escribe `Y` en la terminal **y después** aprueba "Link content" en el celular: tienes unos 90 s.
+3. Si la publicación anterior terminó con el error del manifest, verás `Previous deploy did not exit cleanly. Continuing.`: es normal.
+
 Cada versión tiene **otro origen** (otro hash), así que el `localStorage` del
 navegador empieza vacío. Para datos que deben sobrevivir entre versiones usa
 `getHostLocalStorage()` del SDK, y no publiques durante un evento en vivo.

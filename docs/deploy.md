@@ -1,5 +1,9 @@
 # Deploy y operación
 
+Este documento es específico de testalk. Para el proceso general, desde
+instalar las herramientas hasta resolver errores, sigue la
+[guía de Products Devnet](products-devnet-guide.md).
+
 ## Publicar la app en Products Devnet
 
 Requisitos: [`pad`](https://docs.polkadotcommunity.foundation/) en su última versión

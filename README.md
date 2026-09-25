@@ -170,7 +170,7 @@ testalk/
 │   ├── testalk_stt.py          Micrófono → VAD → faster-whisper → WebSocket
 │   └── guion-demo.txt          Guion para ensayar sin micrófono
 ├── examples/                   Recibos de ejemplo (válido y alterado)
-└── docs/                       Arquitectura, formato, verificación, deploy y revisión de plataforma
+└── docs/                       Arquitectura, formato, verificación, deploy, guía para estudiantes y revisión de plataforma
 ```
 
 ## Inicio rápido
@@ -235,6 +235,8 @@ npm run verify -- /tmp/pot.json   # firma válida; bloques de otra red, sin comp
 ```
 
 ## Deploy en Products Devnet
+
+> **¿Primera vez publicando una app `.dot`?** La [guía para estudiantes](docs/products-devnet-guide.md) explica todo el proceso desde cero, con los errores reales y cómo salir de ellos.
 
 ```bash
 cd app

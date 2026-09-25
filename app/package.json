@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && PAD_ENV=devnet pad dist testalk26.dot",
+    "deploy": "npm run build && PAD_ENV=devnet pad dist devnet-test-talk26.dot",
     "verify": "node scripts/verify.ts",
     "icon": "node scripts/icon.ts"
   },

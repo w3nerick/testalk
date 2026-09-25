@@ -9,7 +9,7 @@ varias cosas que nadie ha medido en este host y que solo
 [`#/diagnostico`](../app/src/views/diagnostics.ts) puede responder en Polkadot
 Desktop y en el celular.
 
-Los hallazgos se corrigieron en código el mismo día (dominio `testalk26`); el
+Los hallazgos se corrigieron en código el mismo día (dominio `devnet-test-talk26`); el
 estado de cada uno está en [Estado](#estado). Lo que depende del dispositivo
 sigue abierto hasta correr el diagnóstico.
 
@@ -238,7 +238,7 @@ De la documentación de PCF y de la actualización de septiembre:
 - [ ] Cuenta nueva de Polkadot App después de la actualización de septiembre, con username.
 - [ ] Autorización de almacenamiento de Bulletin para la cuenta de deploy (Storage Faucet o `dotns bulletin authorize … --env devnet`). *"If a deploy that used to work stops at the upload step, the allowance has most likely lapsed."*
 - [ ] Cuenta mapeada: `dotns account map --env devnet`.
-- [ ] Nombre de 9 letras o más (H3).
+- [ ] Nombre con base de 9 o más, sin contar los dígitos finales, que deben ser 0 o 2 (H3).
 - [ ] Siempre `--env devnet`. El script usa `PAD_ENV=devnet`: `pad` 0.16.6 lo respeta (`--env` gana si están los dos).
 - [ ] Después: `dotns content view <nombre> --env devnet` para confirmar el CID.
 
@@ -250,8 +250,8 @@ Correcciones del 25 sep 2026:
 |---|---|---|
 | H1 | Corregido | La dirección mostrada sale de `pubkey`; `speaker_address` distinto a `pubkey` es **Dirección falsa**; el nombre se muestra como declarado hasta que People chain lo confirme; el veredicto pasa a **Identidad falsa**. Web y CLI. `impersonated-uanl.json` en CI. |
 | H2 | Corregido, falta medir en Desktop | El presentador firma con la cuenta dueña del username (`lib/people.ts` + `getLegacyAccountSigner`), con la cuenta de la app de respaldo (botón **Firmar con la cuenta de la app**); el recibo lleva `dotns` solo si firmó el dueño. El verificador comprueba `UsernameOwnerOf`. Probado contra la People chain real (`kiuber.01`, username inexistente). |
-| H3 | Corregido | Dominio `testalk26` (libre): `lib/network.ts`, `package.json`, `polkadot-app-deploy.config.ts`. |
-| H4 | Corregido, falta medir | QR a `https://testalk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Comprobar tras el deploy que el gateway conserve el `#`. |
+| H3 | Corregido | Dominio `devnet-test-talk26` (libre): `lib/network.ts`, `package.json`, `polkadot-app-deploy.config.ts`. El primer intento, `testalk26`, falló en la verificación previa de `pad` 0.16.7: la regla real del protocolo v2 cuenta la **base** sin los dígitos finales (que deben ser 0 o 2), y `testalk` tiene 7. Ver [deploy.md](deploy.md#nombre-de-dominio). |
+| H4 | Corregido, falta medir | QR a `https://devnet-test-talk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Comprobar tras el deploy que el gateway conserve el `#`. |
 | H5 | Corregido | Se compara la clave devuelta con el blake2b-256; tope de 180 s; un reintento busca antes si ya subió. |
 | H6 | Mitigado, falta medir | El verificador fuera del contenedor ofrece abrir el recibo en el gateway; el diagnóstico prueba la lectura por el host y por el gateway por separado. |
 | H7 | Abierto | Se mantienen las versiones hasta correr el diagnóstico. `polkadot-api` se queda en 2.x. `pad` actualizado a la última versión en la máquina de deploy. |

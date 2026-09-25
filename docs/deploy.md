@@ -13,7 +13,7 @@ cuenta mapeada.
 cd app
 npm install
 pad login          # una vez; QR con Polkadot App. El handshake puede tardar minutos.
-npm run deploy     # npm run build && PAD_ENV=devnet pad dist testalk26.dot
+npm run deploy     # npm run build && PAD_ENV=devnet pad dist devnet-test-talk26.dot
 ```
 
 - Corre `pad` en una terminal propia: pide confirmaciones interactivas.
@@ -26,15 +26,22 @@ Comprobación: el CID final debe resolver en
 
 ### Nombre de dominio
 
-| Longitud | Regla DotNS |
+Regla del protocolo v2 de DotNS, tal como la aplica `pad` 0.16.7 en su
+verificación previa: los dígitos al final deben ser **0 o 2**, y lo demás es
+la **base**.
+
+| Base | Regla DotNS |
 |---|---|
 | 5 caracteres o menos | Reservado |
-| 6 a 8 | Requiere **Full** Personhood; si no la tienes, el registro falla después de la transacción de commit |
-| 9 o más | Registro abierto |
+| 6 a 8 | Personhood Lite (con 2 dígitos) o Full (sin dígitos) |
+| 9 o más | Registro abierto (NoStatus) |
 
-El dominio es **`testalk26`**: 9 letras, registro abierto, libre al 25 sep 2026
-(`testalk` tiene 7 y exigiría Full Personhood,
-[H3](platform-review-2026-09-25.md#h3-testalkdot-requiere-full-personhood)).
+El dominio es **`devnet-test-talk26`**: base de 16, dos dígitos, registro
+abierto, libre al 25 sep 2026. `testalk` (base 7) y `testalk26` (base 7 más
+dos dígitos) piden personhood: `testalk26` falló en la verificación previa de
+`pad` con *"requires ProofOfPersonhoodLite, but this signer is NoStatus"*,
+antes de gastar nada
+([H3](platform-review-2026-09-25.md#h3-testalkdot-requiere-full-personhood)).
 Si alguna vez cambia, cámbialo en tres lugares **antes** de registrar nada:
 
 - `app/package.json` → script `deploy`
@@ -57,8 +64,8 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 ## Checklist del día del evento
 
 **Una semana antes**
-- [ ] Abrir `testalk26.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional. Las filas clave: **Firma con identidad .dot**, **Bulletin: subida y clave** y las dos lecturas.
-- [ ] Abrir `https://testalk26.dev-dot.li/#/<CID de la prueba>` en un celular **sin** Polkadot App: debe abrir el recibo (el gateway conserva el `#`).
+- [ ] Abrir `devnet-test-talk26.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional. Las filas clave: **Firma con identidad .dot**, **Bulletin: subida y clave** y las dos lecturas.
+- [ ] Abrir `https://devnet-test-talk26.dev-dot.li/#/<CID de la prueba>` en un celular **sin** Polkadot App: debe abrir el recibo (el gateway conserva el `#`).
 - [ ] Charla de prueba completa en Desktop, sellada y verificada desde otro celular
 - [ ] Confirmar que el QR proyectado se lee desde el fondo de la sala
 
@@ -66,7 +73,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Laptop conectada a corriente y a una red estable
 - [ ] Micrófono correcto (`--list-mics`); sin audífonos Bluetooth robando la entrada
 - [ ] Transcriptor arrancado y con el modelo caliente
-- [ ] Polkadot Desktop abierto en `testalk26.dot/#/presentar`
+- [ ] Polkadot Desktop abierto en `devnet-test-talk26.dot/#/presentar`
 - [ ] Wallet conectada: la fila de wallet en verde y diciendo **Firmarás con tu identidad .dot**
 - [ ] Las tres filas de preparación en verde
 

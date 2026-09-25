@@ -24,12 +24,14 @@ export const PEOPLE_WS = [
 ];
 
 /**
- * Dominio de la app. Nueve letras o más: los nombres de 6 a 8 exigen Full
- * Personhood y el registro falla después del commit (TWR.DOT, DEVFEEDBACK #9).
- * Si cambia, cambiarlo también en package.json (deploy) y en
- * polkadot-app-deploy.config.ts. Define además la cuenta de producto de la app.
+ * Dominio de la app. Regla de DotNS (protocolo v2, según `pad` 0.16.7): los
+ * dígitos finales deben ser 0 o 2 y el resto es la base; con base de 9 o más
+ * el registro es abierto, con 6 a 8 pide personhood. `testalk26` (base 7)
+ * falló en la verificación previa de `pad`. Si cambia, cambiarlo también en
+ * package.json (deploy) y en polkadot-app-deploy.config.ts. Define además la
+ * cuenta de producto de la app.
  */
-export const APP_LABEL = 'testalk26';
+export const APP_LABEL = 'devnet-test-talk26';
 export const APP_DOTNS = `${APP_LABEL}.dot`;
 
 /**

@@ -69,7 +69,7 @@ sequenceDiagram
     autonumber
     participant M as Micrófono
     participant S as stt/ (Whisper local)
-    participant A as app/ (testalk26.dot)
+    participant A as app/ (devnet-test-talk26.dot)
     participant H as Asset Hub
     participant W as Polkadot App (wallet)
     participant P as People chain
@@ -89,7 +89,7 @@ sequenceDiagram
     A->>W: firmar bytes canónicos con esa cuenta
     W-->>A: firma sr25519
     A->>B: subir recibo (preimage)
-    A-->>A: QR a https://testalk26.dev-dot.li/#/<CID>
+    A-->>A: QR a https://devnet-test-talk26.dev-dot.li/#/<CID>
     Note over A,H: después de la charla
     A->>H: TalkRegistry.seal(huella, firma, ...) en pallet-revive
 ```
@@ -131,7 +131,7 @@ Lo que cambia:
 | Audio | WAV local, fuera del recibo | Huella blake2b-256 del WAV **dentro** del recibo firmado |
 | Cierre | Última frase sin bloque posterior | Remache de bloque al sellar |
 | Firmante | `getLegacyAccountSigner` del dueño del username | Lo mismo; si el host no lo permite, la cuenta de la app, y el verificador lo dice |
-| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://testalk26.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
+| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://devnet-test-talk26.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
 | Verificación sin app | No | CLI: `npm run verify` |
 | Permanencia | Bulletin (14 días) | Registro en pallet-revive: [`TalkRegistry`](contract/) |
 | Ensayo | Requiere el host | Modo ensayo en cualquier navegador |
@@ -140,7 +140,7 @@ Lo que cambia:
 
 ```
 testalk/
-├── app/                        Interfaz web (se publica en testalk26.dot)
+├── app/                        Interfaz web (se publica en devnet-test-talk26.dot)
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── artifact.ts     Formato del recibo, firma canónica, CID, verificación
@@ -239,12 +239,12 @@ npm run verify -- /tmp/pot.json   # firma válida; bloques de otra red, sin comp
 ```bash
 cd app
 pad login          # una vez: QR con Polkadot App
-npm run deploy     # build + PAD_ENV=devnet pad dist testalk26.dot
+npm run deploy     # build + PAD_ENV=devnet pad dist devnet-test-talk26.dot
 ```
 
 Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
 
-Después abre **`testalk26.dot/#/diagnostico`** en Polkadot Desktop y en el
+Después abre **`devnet-test-talk26.dot/#/diagnostico`** en Polkadot Desktop y en el
 celular. Prueba cada pieza de la plataforma desde el dispositivo (canal con el
 host, permisos de red, micrófono, WebGPU, bloques, consulta histórica,
 transcriptor, firma y Bulletin) y deja un reporte copiable.

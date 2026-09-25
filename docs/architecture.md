@@ -10,14 +10,14 @@ flowchart LR
         STT -- "ws://localhost:8787<br/>{type: final, text}" --> APP
         STT --> WAV[(grabaciones/*.wav)]
         subgraph Polkadot Desktop
-            APP[testalk26.dot<br/>app/]
+            APP[devnet-test-talk26.dot<br/>app/]
         end
     end
     APP -- "finalizedBlock$" --> AH[(Asset Hub)]
     APP -- "firma con la identidad .dot" --> PA[Polkadot App<br/>celular]
     APP -- "UsernameOwnerOf" --> PE[(People chain)]
     APP -- "preimage submit" --> BU[(Bulletin)]
-    PUB[Público] -- "QR → https://testalk26.dev-dot.li/#/CID" --> VER[Verificador<br/>navegador o Polkadot App]
+    PUB[Público] -- "QR → https://devnet-test-talk26.dev-dot.li/#/CID" --> VER[Verificador<br/>navegador o Polkadot App]
     VER -- "lookup(CID)" --> BU
     VER -- "hash por altura" --> AH
     VER -- "¿username de esta llave?" --> PE
@@ -75,8 +75,8 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 |---|---|
 | Bloques finalizados en vez de `best` | Un bloque best puede quedar huérfano en un reorg; su hash dejaría de existir y el verificador marcaría el recibo como falso. Finalizar tarda unos segundos más en Asset Hub. |
 | Firmar con la identidad `.dot`, no con `SignerManager` | `SignerManager` solo entrega la cuenta de producto que el host deriva para el dominio ("never the user's identity account", código del SDK): nadie puede ligarla a un username. La cuenta dueña del username en People chain sí se puede comprobar. La de producto queda de respaldo. Ver la [revisión](platform-review-2026-09-25.md#h2-la-firma-sale-de-una-cuenta-de-producto-no-de-la-identidad-del-speaker). |
-| QR con `https://testalk26.dev-dot.li/#/<cid>` | La cámara del teléfono no resuelve `.dot`, y buena parte del público no tendrá Polkadot App. El gateway abre en cualquier navegador y es un contenedor con puente al host: lee Bulletin, y verificar no necesita firmar. En Polkadot App sirve también `testalk26.dot/#/<cid>`. |
-| Dominio de 9 letras | Los nombres de 6 a 8 exigen Full Personhood y el registro falla después del commit. El dominio vive en `lib/network.ts`, `package.json` y `polkadot-app-deploy.config.ts`. |
+| QR con `https://devnet-test-talk26.dev-dot.li/#/<cid>` | La cámara del teléfono no resuelve `.dot`, y buena parte del público no tendrá Polkadot App. El gateway abre en cualquier navegador y es un contenedor con puente al host: lee Bulletin, y verificar no necesita firmar. En Polkadot App sirve también `devnet-test-talk26.dot/#/<cid>`. |
+| Dominio `devnet-test-talk26` | En el protocolo v2 de DotNS los dígitos finales deben ser 0 o 2 y cuenta la base sin ellos: con base de 6 a 8 pide personhood, con 9 o más es abierto. `testalk26` (base 7) falló en la verificación previa de `pad`. El dominio vive en `lib/network.ts`, `package.json` y `polkadot-app-deploy.config.ts`. |
 | Transcriptor en Python y no en el navegador | Rendimiento de Whisper y garantía de grabación. Coincide con la arquitectura probada en escenario por Proof of Talk. |
 | Formato v1 intacto y campos nuevos aparte | Compatibilidad con los verificadores de Proof of Talk. Los campos nuevos quedan cubiertos por la firma. |
 | Fuentes e íconos dentro del bundle | El contenedor no garantiza acceso a CDNs; la fuente de íconos completa pesaría varios MB en Bulletin, así que solo se importan los SVG usados. |

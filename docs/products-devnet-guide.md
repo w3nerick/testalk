@@ -310,7 +310,47 @@ Cada versión tiene **otro origen** (otro hash), así que el `localStorage` del
 navegador empieza vacío. Para datos que deben sobrevivir entre versiones usa
 `getHostLocalStorage()` del SDK, y no publiques durante un evento en vivo.
 
-## 9. Programar para el contenedor
+## 9. La app y el host deben hablar el mismo protocolo
+
+Este es el error más difícil de ver, así que va antes que todo lo demás del SDK.
+
+Tu app habla con el host (Polkadot App, Desktop o el gateway) con un protocolo
+binario que tiene **versión de códec**. Si la app y el host no usan la misma,
+el canal se abre, el SDK dice `connected`, y **ninguna petición recibe
+respuesta**: ni permisos, ni cuentas, ni firmas. No hay error; todo se queda
+esperando.
+
+| Paquete de tu app | Códec |
+|---|---|
+| `@parity/truapi` 0.5.1 a 0.13.1 (`product-sdk-host` 0.14.1 a 0.19.1, `product-sdk-signer` 0.11.1 a 0.14.4) | **1** |
+| `@parity/truapi` 0.16.0 en adelante (`product-sdk-host` 0.20.0+, `product-sdk-signer` 0.14.5+) | 2 |
+
+Polkadot Desktop 0.1.3 (septiembre de 2026) habla el **códec 1**. Con él
+funcionan `product-sdk-host` **0.19.1** + `product-sdk-signer` **0.14.4**
+(o el paquete `@parity/product-sdk` **0.27.0**, que trae esa pareja):
+
+```bash
+npm install --save-exact @parity/product-sdk-host@0.19.1 @parity/product-sdk-signer@0.14.4
+npm ls @parity/product-sdk-host @parity/truapi    # debe haber UNA sola copia de cada uno
+```
+
+Cómo saber qué habla tu host, sin adivinar:
+
+```bash
+# Versión del protocolo que trae Polkadot Desktop (Mac)
+npx @electron/asar extract-file "/Applications/Polkadot Desktop Dev.app/Contents/Resources/app.asar" \
+  node_modules/@novasamatech/host-api/dist/constants.js && cat constants.js
+# → export const SCALE_CODEC_PROTOCOL_ID = 1;
+
+# Versión que habla tu app
+grep -h "TRUAPI_CODEC_VERSION = " node_modules/@parity/truapi/dist/generated/client.js
+```
+
+Cuando actualices la app o salga un Desktop nuevo, vuelve a comprobarlo:
+"instala siempre la última versión" aplica a `pad` y `dotns`, **no** al SDK de
+tu app mientras los hosts no hablen el mismo códec.
+
+## 10. Programar para el contenedor
 
 Tu app corre dentro de Polkadot App, Polkadot Desktop o el gateway
 `dev-dot.li`, que se comunica con el "host". Lo que más trabajo cuesta
@@ -365,6 +405,7 @@ Límites medidos por otros equipos ([TWR.DOT](https://github.com/TheWhiteRabbitM
 
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
+| El SDK dice `connected` pero **nada** responde: permisos, cuentas, firmas | Tu app y el host hablan distinta versión de códec | [Sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo): usa `product-sdk-host` 0.19.1 + `signer` 0.14.4 con Desktop 0.1.3 |
 | `testalk26.dot requires ProofOfPersonhoodLite, but this signer is NoStatus` | La base del nombre tiene menos de 9 caracteres | Elige un nombre con base de 9 o más ([paso 3](#3-elegir-el-nombre-antes-que-nada)). No se gastó nada: falló en la verificación previa |
 | La app aparece en otra red o el nombre "no existe" | Faltó `--env devnet` o `PAD_ENV=devnet` | Agrégalo en todos los comandos de `pad` y `dotns` |
 | `pad` se queda esperando y la `Y` no hace nada | La terminal manda el proceso a segundo plano | Usa Terminal.app u otra terminal normal |

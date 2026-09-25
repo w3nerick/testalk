@@ -254,7 +254,7 @@ Correcciones del 25 sep 2026:
 | H4 | Corregido, falta medir | QR a `https://devnet-test-talk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Comprobar tras el deploy que el gateway conserve el `#`. |
 | H5 | Corregido | Se compara la clave devuelta con el blake2b-256; tope de 180 s; un reintento busca antes si ya subió. |
 | H6 | Mitigado, falta medir | El verificador fuera del contenedor ofrece abrir el recibo en el gateway; el diagnóstico prueba la lectura por el host y por el gateway por separado. |
-| H7 | Abierto | Se mantienen las versiones hasta correr el diagnóstico. `polkadot-api` se queda en 2.x. `pad` actualizado a la última versión en la máquina de deploy. |
+| H7 | **Confirmado y corregido** | Ver [H7 medido en el dispositivo](#h7-medido-en-el-dispositivo). SDK bajado a `product-sdk-host` 0.19.1 + `signer` 0.14.4 (protocolo 1). `pad` actualizado a 0.16.7. |
 | H8 | Corregido | El diagnóstico suma: cadenas que sirve el host (`isChainSupported`), cuentas del wallet, username en People chain, firma con identidad, firma con la cuenta de la app, clave devuelta por Bulletin, lectura por host y por gateway, y `TalkRegistry` por el cliente principal. |
 | H9 | Corregido | **Copiar JSON** en el presentador y en el verificador. |
 | H10 | Corregido | `localhost` solo se pide en `#/presentar` y `#/diagnostico`. |
@@ -266,6 +266,42 @@ desde un navegador tardó **23.2 s** con `people-paseo.rotko.net`, contra 2.9 s
 lista, la identidad salía "sin comprobar". Ahora los endpoints van ordenados por
 esa medición y, si uno se vence, se reintenta con el siguiente
 ([`people.ts`](../app/src/lib/people.ts)).
+
+## H7 medido en el dispositivo
+
+Primer diagnóstico en **Polkadot Desktop 0.1.3** (Electron 43), con testalk
+en `product-sdk-host` 0.21.0 / `truapi` 0.17.0:
+
+```
+[YES ] Canal con el host (0 ms): connected
+[NO  ] Permiso de red (Remote) (8001 ms): sin respuesta
+[NO  ] El host sirve Asset Hub (8001 ms): sin respuesta
+[NO  ] Cuentas del wallet (getLegacyAccounts) (8001 ms): sin respuesta
+[NO  ] Wallet (SignerManager): El wallet no respondió a tiempo.
+[YES ] Asset Hub: bloque finalizado · por RPC público (el host no entregó Asset Hub en 12 s)
+```
+
+El canal abre pero **ninguna petición recibe respuesta**. La causa está en el
+código de los dos lados:
+
+- Desktop 0.1.3 lleva `@novasamatech/host-api` 0.9.4 (dentro de `app.asar`):
+  `SCALE_CODEC_PROTOCOL_ID = 1`, y su saludo (`host_handshake`) pide el protocolo 1.
+- `truapi` 0.17.0 tiene `TRUAPI_CODEC_VERSION = 2`: al saludo del host responde
+  `UnsupportedProtocolVersion`, y el host descarta sus peticiones en formato 2.
+
+| `truapi` | Códec | `product-sdk-host` | `product-sdk-signer` |
+|---|---|---|---|
+| 0.5.1 a 0.13.1 | **1** | 0.14.1 a **0.19.1** | 0.11.1 a **0.14.4** |
+| 0.16.0 en adelante | 2 | 0.20.0 en adelante | 0.14.5 en adelante |
+
+testalk quedó en la pareja más nueva con códec 1: `product-sdk-host` 0.19.1
+y `product-sdk-signer` 0.14.4, una sola copia de cada uno (`npm ls`). Es la
+misma que usa `@parity/product-sdk` 0.27.0. El diagnóstico muestra ahora las
+versiones y el códec en su primera fila y en el reporte copiado.
+
+Mientras Asset Hub no llegó por el host, el respaldo a RPC público (commit
+`f6773fb`) mantuvo la app conectada: los bloques, la lectura por altura y
+`TalkRegistry` funcionaron igual.
 
 ## Orden sugerido (original)
 

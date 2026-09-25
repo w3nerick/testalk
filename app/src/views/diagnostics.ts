@@ -28,6 +28,11 @@ async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
   return [v, Math.round(performance.now() - t0)];
 }
 
+/** El host y la app deben hablar el mismo códec: si no, el canal abre y nadie responde. */
+function sdkLine(): string {
+  return `product-sdk-host ${__SDK__.host} · signer ${__SDK__.signer} · truapi ${__SDK__.truapi} (protocolo ${__SDK__.codec})`;
+}
+
 /** Huella del primer recibo sellado en TalkRegistry (charla "Test", 24 sep 2026, bloque #13,649,506). */
 const KNOWN_SEAL = '0xaa92853edc1f3e59d3dacc1ff0d2517f70ddf7787cc23dd554ebca3847918e2c';
 
@@ -78,6 +83,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     copy.disabled = true;
     const inside = isInsideContainerSync();
 
+    await step('Versión del SDK', async () => ['yes', sdkLine()]);
     await step('Contenedor', async () => [inside ? 'yes' : 'skip', inside ? 'Dentro de Polkadot App / Desktop' : 'Navegador normal: modo ensayo']);
     if (inside) await step('Canal con el host', async () => ((await waitForHost()) ? ['yes', 'connected'] : ['no', 'no llegó a connected en 12 s']));
     if (inside) {
@@ -255,7 +261,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
   root.querySelector('#run')!.addEventListener('click', () => run(false));
   root.querySelector('#run-bulletin')!.addEventListener('click', () => run(true));
   copy.addEventListener('click', () => {
-    const txt = [`testalk diagnóstico ${new Date().toISOString()}`, navigator.userAgent, '']
+    const txt = [`testalk diagnóstico ${new Date().toISOString()}`, navigator.userAgent, sdkLine(), '']
       .concat(lines.map(l => `[${l.status.toUpperCase().padEnd(4)}] ${l.name}${l.ms !== undefined ? ` (${l.ms} ms)` : ''}: ${l.detail}`))
       .join('\n');
     navigator.clipboard?.writeText(txt).then(() => toast('Reporte copiado'), () => toast('No se pudo copiar'));

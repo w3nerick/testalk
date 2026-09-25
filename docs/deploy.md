@@ -100,6 +100,7 @@ con apps reales en el contenedor. testalk ya está escrito para convivir con est
 | `lookup` reporta `null` hasta encontrar el preimage | El verificador ignora los `null` y espera hasta 20 s |
 | La red dentro del contenedor necesita el permiso `Remote` por dominio | Se piden al arrancar: `localhost`, el gateway IPFS y los RPC públicos |
 | `localStorage` se vacía con cada release | El borrador de la charla dura la sesión; no publiques una versión nueva durante una charla |
+| Polkadot Desktop 0.1.3 habla el códec 1 del protocolo; `truapi` 0.16+ habla el 2 | SDK fijado en `product-sdk-host` 0.19.1 + `signer` 0.14.4. **No subirlo** sin comprobar el códec del host ([guía](products-devnet-guide.md#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo)) |
 | `SignerManager` entrega una cuenta de producto de la app, nunca la identidad del usuario | Se firma con la cuenta dueña del username en People chain; la de producto queda de respaldo y el recibo lo refleja |
 | En `*.dev-dot.li` el web shell no deriva cuentas de producto (TWR #18) | Presentar solo desde Polkadot Desktop; verificar sí funciona ahí |
 

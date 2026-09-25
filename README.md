@@ -165,7 +165,7 @@ testalk/
 │   ├── testalk_stt.py          Micrófono → VAD → faster-whisper → WebSocket
 │   └── guion-demo.txt          Guion para ensayar sin micrófono
 ├── examples/                   Recibos de ejemplo (válido y alterado)
-└── docs/                       Arquitectura, formato, verificación y deploy
+└── docs/                       Arquitectura, formato, verificación, deploy y revisión de plataforma
 ```
 
 ## Inicio rápido
@@ -258,11 +258,12 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Flujo completo probado en modo ensayo contra el devnet real
 - [x] Código alineado con el comportamiento medido del devnet ([detalle](docs/deploy.md#comportamiento-conocido-del-devnet))
 - [ ] Prueba en Polkadot Desktop y celular: firma de bytes con `SignerManager`, subida a Bulletin y acceso a `localhost`
+- [ ] Resolver los hallazgos de la [revisión del 25 sep 2026](docs/platform-review-2026-09-25.md) contra TWR.DOT y la documentación de PCF
 - [x] `TalkRegistry` desplegado en pallet-revive: huella, firma y cota superior de tiempo, permanentes
 - [x] Verificador web y CLI consultan el registro
 - [ ] Anclar desde la app al sellar (hoy se ancla con `npm run anchor` después de la charla)
-- [ ] Verificar en People chain que el username declarado sea dueño de la llave
-- [ ] Comparar un WAV contra la huella desde el verificador
+- [ ] Verificar en People chain que el username declarado sea dueño de la llave (requiere firmar con la identidad `.dot`, ver la [revisión de plataforma](docs/platform-review-2026-09-25.md))
+- [x] Comparar un WAV contra la huella desde el verificador
 - [ ] Grabar y transcribir **dentro de la app** (permiso `Microphone` + Whisper con WebGPU), sin el script de Python. El diagnóstico ya mide si el dispositivo lo permite
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin
 

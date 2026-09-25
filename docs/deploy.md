@@ -2,8 +2,12 @@
 
 ## Publicar la app en Products Devnet
 
-Requisitos: [`pad`](https://docs.polkadotcommunity.foundation/) 0.16.6 o superior
-y Polkadot App en el celular.
+Requisitos: [`pad`](https://docs.polkadotcommunity.foundation/) en su última versión
+(0.16.7 al 25 sep 2026), Node 22 o más y Polkadot App en el celular. Antes del
+primer deploy revisa la lista de
+[la revisión de plataforma](platform-review-2026-09-25.md#antes-del-deploy):
+cuenta nueva tras la actualización de septiembre, autorización de Bulletin y
+cuenta mapeada.
 
 ```bash
 cd app
@@ -25,11 +29,13 @@ Comprobación: el CID final debe resolver en
 | Longitud | Regla DotNS |
 |---|---|
 | 5 caracteres o menos | Reservado |
-| 6 a 8 | Requiere proof of personhood |
+| 6 a 8 | Requiere **Full** Personhood; si no la tienes, el registro falla después de la transacción de commit |
 | 9 o más | Registro abierto |
 
-`testalk` tiene 7. Si la cuenta no califica, usa un nombre de 9 o más (por
-ejemplo `testalk26`) y cámbialo en tres lugares:
+`testalk` tiene 7 y está libre (consultado el 25 sep 2026). Si la cuenta no
+tiene Full Personhood, usa un nombre de 9 o más (por ejemplo `testalk26`) y
+cámbialo en tres lugares **antes** de registrar nada
+([H3](platform-review-2026-09-25.md#h3-testalkdot-requiere-full-personhood)):
 
 - `app/package.json` → script `deploy`
 - `app/polkadot-app-deploy.config.ts` → `domain`
@@ -82,6 +88,8 @@ con apps reales en el contenedor. testalk ya está escrito para convivir con est
 | `lookup` reporta `null` hasta encontrar el preimage | El verificador ignora los `null` y espera hasta 20 s |
 | La red dentro del contenedor necesita el permiso `Remote` por dominio | Se piden al arrancar: `localhost`, el gateway IPFS y los RPC públicos |
 | `localStorage` se vacía con cada release | El borrador de la charla dura la sesión; no publiques una versión nueva durante una charla |
+| `SignerManager` entrega una cuenta de producto de la app, nunca la identidad del usuario | Pendiente: firmar con la identidad `.dot` ([H2](platform-review-2026-09-25.md#h2-la-firma-sale-de-una-cuenta-de-producto-no-de-la-identidad-del-speaker)) |
+| En `*.dev-dot.li` el web shell no deriva cuentas de producto (TWR #18) | Presentar solo desde Polkadot Desktop; verificar sí funciona ahí |
 
 ## Si algo falla
 

@@ -40,7 +40,7 @@ hashes inventados pero bien firmado le pasaría; aquí no.
 | El audio no va en el recibo | La firma no demuestra que la voz sea del firmante | Publicar el WAV; la huella lo ata al recibo |
 | Ventana entre la charla y el anclaje | Alguien podría juntar block hashes durante una charla y escribir el texto después, hasta que se ancla | Anclar en `TalkRegistry` en cuanto termina la charla: la ventana queda fijada on-chain y es visible |
 | La llave no prueba humanidad | Un bot con llave puede firmar | Individuality / proof of personhood cuando esté disponible |
-| `speaker` y `dotns` los declara la app | Se firman, pero nadie comprueba que el username sea dueño de la llave | Consultar `Resources.UsernameOwnerOf` en People chain |
+| `speaker` y `dotns` los declara la app | Se firman, pero nadie comprueba que el username sea dueño de la llave. Hoy además la interfaz los muestra como si estuvieran comprobados ([H1](platform-review-2026-09-25.md#h1-el-verificador-muestra-una-identidad-que-la-firma-no-prueba)) y la llave es una cuenta de producto de la app, no la del username ([H2](platform-review-2026-09-25.md#h2-la-firma-sale-de-una-cuenta-de-producto-no-de-la-identidad-del-speaker)) | Firmar con la identidad `.dot` y consultar `Resources.UsernameOwnerOf` en People chain |
 | Bulletin borra a los 14 días | Pasado ese plazo el QR deja de resolver | `TalkRegistry` conserva huella y firma; el JSON guardado sigue verificándose con el CLI y se ata al sello por su huella |
 | Whisper puede equivocarse | El texto firmado es la transcripción, no el audio | El WAV sellado es la referencia |
 
@@ -57,3 +57,4 @@ evidencia.
 |---|---|
 | [`examples/rehearsal-uanl.json`](../examples/rehearsal-uanl.json) | Firma válida, 5/5 bloques en Asset Hub, marcado como ensayo |
 | [`examples/tampered-uanl.json`](../examples/tampered-uanl.json) | Igual, con "UANL" cambiado por "UNAM": firma inválida |
+| [`examples/impersonated-uanl.json`](../examples/impersonated-uanl.json) | Firmado por `//Bob` pero declara ser `alice.dot` con la dirección de `//Alice`. **Hoy pasa como "Charla verificada"** ([H1](platform-review-2026-09-25.md#h1-el-verificador-muestra-una-identidad-que-la-firma-no-prueba)); debe marcar la identidad como no comprobada |

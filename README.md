@@ -146,10 +146,15 @@ testalk/
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
 │   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
-│   │   │   └── host.ts         waitForHost + timeouts para toda llamada al host
+│   │   │   ├── host.ts         waitForHost + timeouts para toda llamada al host
+│   │   │   └── ascii.ts        Onda de voz, sello y barras en ASCII
 │   │   ├── views/              Inicio, presentador, verificador y diagnóstico
-│   │   └── style.css           Sistema visual (oscuro y claro)
-│   ├── scripts/verify.ts       Verificador por línea de comandos
+│   │   └── style.css           Sistema visual (claro y oscuro)
+│   ├── scripts/
+│   │   ├── verify.ts           Verificador por línea de comandos
+│   │   └── icon.ts             Genera el ícono, el favicon y la marca (npm run icon)
+│   ├── brand/                  Ícono en SVG, favicon y marca de la barra superior
+│   ├── icon.png                Ícono de la app (manifest de DotNS)
 │   └── polkadot-app-deploy.config.ts
 ├── contract/                   TalkRegistry: Solidity → PolkaVM (resolc) en pallet-revive
 │   ├── contracts/TalkRegistry.sol

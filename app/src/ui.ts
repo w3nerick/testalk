@@ -1,4 +1,6 @@
 import { icon } from './lib/icons';
+// La marca sale de scripts/icon.ts (npm run icon), igual que el ícono de la app.
+import mark from '../brand/mark.svg?raw';
 
 /** Escapa texto para interpolarlo en HTML. Todo lo que viene del STT o de un artefacto pasa por aquí. */
 export function esc(s: unknown): string {
@@ -18,7 +20,7 @@ export function topbar(extra = ''): string {
   return `
   <header class="topbar">
     <div class="shell topbar-in">
-      <a class="brand" href="#/"><span class="brand-mark">${icon('waveform')}</span>testalk</a>
+      <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">${mark}</span>testalk</a>
       <div class="grow">${extra}</div>
       <nav class="nav">${link('presentar', 'Presentar')}${link('verificar', 'Verificar')}</nav>
     </div>

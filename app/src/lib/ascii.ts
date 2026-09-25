@@ -6,7 +6,7 @@
  * clavado en ella un poste con su número.
  */
 
-const RAMP = ' .:-=+*#%@';
+export const RAMP = ' .:-=+*#%@';
 
 export interface VoiceField {
   /** Clava un bloque en la onda: un poste vertical con la etiqueta arriba. */

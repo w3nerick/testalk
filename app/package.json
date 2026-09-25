@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && PAD_ENV=devnet pad dist testalk.dot",
-    "verify": "node scripts/verify.ts"
+    "verify": "node scripts/verify.ts",
+    "icon": "node scripts/icon.ts"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
@@ -26,7 +27,9 @@
     "viem": "^2.56.8"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/qrcode": "^1.5.5",
+    "opentype.js": "^2.0.0",
     "typescript": "~5.9.3",
     "vite": "^7.1.0"
   }

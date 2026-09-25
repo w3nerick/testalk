@@ -130,14 +130,14 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 400; }
   text-decoration: none;
 }
 .brand-mark {
-  width: 28px;
-  height: 28px;
+  /* 32 px: la marca está dibujada en una rejilla de 32, así cada unidad cae en un píxel entero. */
+  width: 32px;
+  height: 32px;
+  flex: none;
   background: var(--inv);
   color: var(--inv-text);
-  display: grid;
-  place-items: center;
 }
-.brand-mark .ico { width: 17px; height: 17px; }
+.brand-mark svg { display: block; width: 100%; height: 100%; }
 .topbar .grow { flex: 1; min-width: 0; }
 .topbar .talk-title {
   display: block;

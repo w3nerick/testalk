@@ -10,9 +10,12 @@ import {
   type BlocksCheck,
   type SigCheck,
 } from '../lib/artifact';
+import QRCode from 'qrcode';
+import { blake2b } from '@noble/hashes/blake2b';
+import { u8aToHex } from '@polkadot/util';
 import { fetchReceipt } from '../lib/bulletin';
+import { APP_DOTNS } from '../lib/signer';
 import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
-import { downloadJson } from './presenter';
 
 let local: { artifact: Artifact; cid: string } | null = null;
 
@@ -42,7 +45,7 @@ export function renderVerifier(root: HTMLElement, cid?: string): Cleanup {
           if (cidForBytes(bytes) !== cid) return failed(root, 'Los datos recibidos no corresponden a este CID.');
           let a: Artifact;
           try { a = JSON.parse(new TextDecoder().decode(bytes)); } catch { return failed(root, 'El recibo no es JSON válido.'); }
-          show(root, a, cid, true);
+          show(root, a, cid, true, bytes);
         })
         .catch(e => !dead && failed(root, (e as Error).message));
     }
@@ -107,7 +110,7 @@ function picker(root: HTMLElement) {
   const read = async (f: File) => {
     try {
       const bytes = new Uint8Array(await f.arrayBuffer());
-      show(root, JSON.parse(new TextDecoder().decode(bytes)), cidForBytes(bytes), false);
+      show(root, JSON.parse(new TextDecoder().decode(bytes)), cidForBytes(bytes), false, bytes);
     } catch {
       err.innerHTML = `<div class="error-box">${icon('warningCircle')}Ese archivo no es un recibo válido.</div>`;
     }
@@ -135,11 +138,20 @@ function picker(root: HTMLElement) {
 type Tone = 'ok' | 'bad' | 'warn' | 'wait';
 const toneIcon: Record<Tone, IconName> = { ok: 'checkCircle', bad: 'xCircle', warn: 'warningCircle', wait: 'circleNotch' };
 
-function row(tone: Tone, title: string, body: string): string {
-  return `<div class="chk ${tone}">${icon(toneIcon[tone], tone === 'wait' ? 'spin' : '')}<b>${title}</b><p>${body}</p></div>`;
+function row(id: string, tone: Tone, title: string, body: string, extra = ''): string {
+  return `<div class="chk ${tone}" id="chk-${id}">${icon(toneIcon[tone], tone === 'wait' ? 'spin' : '')}<b>${title}</b><p>${body}</p>${extra}</div>`;
 }
 
-function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean) {
+function setRow(root: HTMLElement, id: string, html: string) {
+  const el = root.querySelector(`#chk-${id}`);
+  if (el) el.outerHTML = html;
+}
+
+/**
+ * `bytes` son los del archivo o de Bulletin tal cual: la huella del sello y el
+ * CID dependen de cada byte, así que se descargan esos y no un JSON re-serializado.
+ */
+function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean, bytes?: Uint8Array) {
   const dur = Date.parse(a.ended_at) - Date.parse(a.started_at);
   const rehearsal = (a as { rehearsal?: boolean }).rehearsal === true;
   const who = a.dotns || a.speaker || shortAddr(a.speaker_address ?? a.pubkey);
@@ -159,9 +171,9 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
         </div>
       </section>
       <section class="card checks" id="checks">
-        ${row('wait', 'Firma', 'Comprobando…')}
-        ${row('wait', 'Bloques en la cadena', 'Esperando…')}
-        ${row('wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
+        ${row('sig', 'wait', 'Firma', 'Comprobando…')}
+        ${row('blocks', 'wait', 'Bloques en la cadena', 'Esperando…')}
+        ${row('seal', 'wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
         ${audioRow(a)}
       </section>
       <section class="card timeline">
@@ -172,16 +184,21 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
             : `<span class="rivet">${icon('cube')}#${esc(e.blk)} · ${esc(e.time)}</span>`))
           .join('')}
       </section>
+      ${limits(a)}
       <div class="actions">
         <button class="btn" id="dl">${icon('downloadSimple')}Descargar recibo</button>
-        ${fromBulletin ? `<button class="btn" id="cp">${icon('copy')}Copiar CID</button>` : ''}
+        ${fromBulletin ? `<button class="btn" id="qr-btn">${icon('qrCode')}QR</button>
+        <button class="btn" id="cp">${icon('copy')}Copiar enlace</button>` : ''}
         <a class="btn ghost" href="#/verificar" id="other">${icon('fileArrowUp')}Otro recibo</a>
       </div>
+      <section class="card share" id="share" hidden></section>
       <p class="faint mono" style="font-size:12px;word-break:break-all;margin:0">CID ${esc(cid)}</p>
     </main>`;
 
-  root.querySelector('#dl')!.addEventListener('click', () => downloadJson(a, cid));
-  root.querySelector('#cp')?.addEventListener('click', () => navigator.clipboard?.writeText(cid).then(() => toast('CID copiado'), () => toast(cid)));
+  const link = `https://${APP_DOTNS}/#/${cid}`;
+  root.querySelector('#dl')!.addEventListener('click', () => download(bytes ?? new TextEncoder().encode(JSON.stringify(a)), cid));
+  root.querySelector('#cp')?.addEventListener('click', () => navigator.clipboard?.writeText(link).then(() => toast('Enlace copiado'), () => toast(link)));
+  root.querySelector('#qr-btn')?.addEventListener('click', () => toggleQr(root.querySelector<HTMLElement>('#share')!, link));
   root.querySelector('#other')!.addEventListener('click', ev => {
     // Si ya estamos en #/verificar el hash no cambia y no habría re-render.
     ev.preventDefault();
@@ -191,46 +208,137 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
   });
 
   run(root, a);
-  sealRow(root, cid);
+  sealRow(root, a, cid);
+  bindAudio(root, a);
+}
+
+function download(bytes: Uint8Array, cid: string) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/json' }));
+  link.download = `testalk-${cid.slice(-10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+async function toggleQr(box: HTMLElement, link: string) {
+  if (!box.hidden) { box.hidden = true; return; }
+  if (!box.innerHTML) {
+    const qr = await QRCode.toDataURL(link, { margin: 1, width: 720, errorCorrectionLevel: 'M', color: { dark: '#0d0d10', light: '#ffffff' } });
+    box.innerHTML = `
+      <div class="qr"><img src="${qr}" alt="QR para verificar esta charla" /></div>
+      <p class="muted" style="margin:0;font-size:14px">Escanéalo con Polkadot App para abrir este recibo.</p>`;
+  }
+  box.hidden = false;
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/** Lo que el recibo prueba y lo que no: sin esto el ✓ verde promete de más. */
+function limits(a: Artifact): string {
+  return `
+    <details class="card limits">
+      <summary>${icon('question')}¿Qué prueba este recibo?</summary>
+      <div>
+        <h3>Prueba</h3>
+        <ul>
+          <li>La llave <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span> firmó exactamente este texto.</li>
+          <li>El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}: su hash no se conocía.</li>
+          <li>Existía a más tardar cuando se subió a Bulletin o se selló en Asset Hub.</li>
+          ${a.audio ? '<li>Si el speaker comparte el audio, se puede comprobar que es la misma grabación.</li>' : ''}
+        </ul>
+        <h3>No prueba</h3>
+        <ul>
+          <li>Que lo dicho sea cierto. Prueba quién lo dijo, no si tiene razón.</li>
+          <li>Que la voz sea de esa persona: el recibo guarda texto, no la voz.</li>
+          <li>Que la llave sea de un humano único (eso lo daría Individuality).</li>
+        </ul>
+      </div>
+    </details>`;
 }
 
 function audioRow(a: Artifact): string {
-  if (!a.audio) return row('warn', 'Grabación', 'Este recibo no incluye huella del audio.');
+  if (!a.audio) return row('audio', 'warn', 'Grabación', 'Este recibo no incluye huella del audio.');
   return row(
+    'audio',
     'ok',
     'Grabación sellada',
-    `${Math.round(a.audio.seconds / 60)} min de audio. Huella blake2b-256 <span class="mono">${esc(a.audio.hash.slice(0, 18))}…</span>. El speaker conserva el archivo: si lo comparte, cualquiera puede comprobar que es el mismo.`,
+    `${fmtDuration(a.audio.seconds * 1000)} de audio. Huella blake2b-256 <span class="mono">${esc(a.audio.hash.slice(0, 18))}…</span>. El speaker conserva el archivo: si lo comparte, cualquiera puede comprobar que es el mismo.`,
+    audioPicker('Comprobar audio'),
   );
 }
 
-async function run(root: HTMLElement, a: Artifact) {
-  const checks = root.querySelector<HTMLElement>('#checks')!;
-  const sigEl = checks.children[0] as HTMLElement;
+function audioPicker(label: string): string {
+  return `<label class="btn sm chk-action">${icon('waveform')}${label}<input type="file" accept="audio/wav,audio/x-wav,.wav" hidden id="wav" /></label>`;
+}
 
+/** Huella del WAV por partes: una charla de 15 min son ~30 MB. */
+async function hashFile(f: File, onProgress: (pct: number) => void): Promise<string> {
+  const h = blake2b.create({ dkLen: 32 });
+  const reader = f.stream().getReader();
+  let done = 0;
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    h.update(r.value);
+    done += r.value.byteLength;
+    onProgress(f.size ? Math.round((done / f.size) * 100) : 100);
+  }
+  return u8aToHex(h.digest());
+}
+
+let audioUrl: string | null = null;
+
+function bindAudio(root: HTMLElement, a: Artifact) {
+  const seal = a.audio;
+  const input = root.querySelector<HTMLInputElement>('#wav');
+  if (!seal || !input) return;
+  input.addEventListener('change', async () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    setRow(root, 'audio', row('audio', 'wait', 'Comprobando audio', `Calculando la huella de ${esc(f.name)}…`));
+    const p = () => root.querySelector('#chk-audio p');
+    let hash: string;
+    try {
+      hash = await hashFile(f, pct => { const el = p(); if (el) el.textContent = `Calculando la huella de ${f.name}… ${pct}%`; });
+    } catch {
+      setRow(root, 'audio', row('audio', 'warn', 'Audio sin comprobar', 'No se pudo leer el archivo.', audioPicker('Elegir otro')));
+      return bindAudio(root, a);
+    }
+    if (hash.toLowerCase() !== seal.hash.toLowerCase()) {
+      setRow(root, 'audio', row('audio', 'bad', 'No es esta grabación',
+        `La huella de ${esc(f.name)} es <span class="mono">${esc(hash.slice(0, 18))}…</span>, el recibo dice <span class="mono">${esc(seal.hash.slice(0, 18))}…</span>. Basta un byte distinto (un recorte, otra exportación) para que no coincida.`,
+        audioPicker('Elegir otro')));
+      return bindAudio(root, a);
+    }
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    audioUrl = URL.createObjectURL(f);
+    setRow(root, 'audio', row('audio', 'ok', 'Audio auténtico',
+      `${esc(f.name)} es byte por byte la grabación que se selló al firmar.`,
+      `<audio class="chk-action" controls preload="metadata" src="${audioUrl}"></audio>`));
+  });
+}
+
+async function run(root: HTMLElement, a: Artifact) {
   const sig: SigCheck = await verifySignature(a);
-  sigEl.outerHTML = sig.ok
-    ? row('ok', 'Firma válida', `sr25519 de <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span>. Nadie cambió una sola letra desde que se firmó.`)
-    : row('bad', 'Firma inválida', esc(sig.reason ?? 'La firma no corresponde.'));
+  setRow(root, 'sig', sig.ok
+    ? row('sig', 'ok', 'Firma válida', `sr25519 de <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span>. Nadie cambió una sola letra desde que se firmó.`)
+    : row('sig', 'bad', 'Firma inválida', esc(sig.reason ?? 'La firma no corresponde.')));
 
   const blocksCount = a.chain.filter(e => 'full' in e).length;
-  const blkNow = () => checks.children[1] as HTMLElement;
   let blocks: BlocksCheck;
   try {
     blocks = await verifyBlocks(a, hashAtHeight, ASSET_HUB_GENESIS, (d, t) => {
-      const p = blkNow().querySelector('p');
+      const p = root.querySelector('#chk-blocks p');
       if (p) p.textContent = `Consultando ${d} de ${t} bloques…`;
     });
   } catch {
     blocks = { status: 'skipped', checked: blocksCount, matched: 0, mismatched: [], unknown: blocksCount, reason: 'sin conexión a la red' };
   }
-  blkNow().outerHTML =
+  setRow(root, 'blocks',
     blocks.status === 'ok'
-      ? row('ok', 'Anclada a Polkadot', `Los ${blocks.matched} bloques existen en Asset Hub. El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}.`)
+      ? row('blocks', 'ok', 'Anclada a Polkadot', `Los ${blocks.matched} bloques existen en Asset Hub. El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}.`)
       : blocks.status === 'fail'
-        ? row('bad', 'Bloques que no existen', `${blocks.mismatched.length} de ${blocks.checked} hashes no coinciden con la cadena (primero: #${esc(blocks.mismatched[0].blk)}).`)
+        ? row('blocks', 'bad', 'Bloques que no existen', `${blocks.mismatched.length} de ${blocks.checked} hashes no coinciden con la cadena (primero: #${esc(blocks.mismatched[0].blk)}).`)
         : blocks.status === 'partial'
-          ? row('warn', 'Anclaje parcial', `${blocks.matched} bloques confirmados, ${blocks.unknown} sin respuesta de la red.`)
-          : row('warn', 'Bloques sin comprobar', esc(blocks.reason ?? 'No se pudieron consultar.'));
+          ? row('blocks', 'warn', 'Anclaje parcial', `${blocks.matched} bloques confirmados, ${blocks.unknown} sin respuesta de la red.`)
+          : row('blocks', 'warn', 'Bloques sin comprobar', esc(blocks.reason ?? 'No se pudieron consultar.')));
 
   const ok = sig.ok && blocks.status !== 'fail';
   const v = root.querySelector<HTMLElement>('#verdict')!;
@@ -246,17 +354,25 @@ function firstBlk(a: Artifact): string {
 }
 
 /** Fila del registro permanente. Informativa: no cambia el veredicto. */
-async function sealRow(root: HTMLElement, cid: string) {
-  const el = () => root.querySelector<HTMLElement>('#checks')?.children[2] as HTMLElement | undefined;
+async function sealRow(root: HTMLElement, a: Artifact, cid: string) {
   let html: string;
   try {
     const seal = await withReadClient(c => readSeal(c, preimageKeyFromCid(cid)));
-    html = seal
-      ? row('ok', 'Sello permanente', `Anclado en Asset Hub en el bloque #${Number(seal.blockNumber).toLocaleString('en-US')}, el ${new Date(Number(seal.sealedAt) * 1000).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}. El recibo existía a más tardar entonces y sigue verificable aunque Bulletin lo borre.`)
-      : row('warn', 'Sin sello permanente', 'Este recibo no está en el registro de Asset Hub. Bulletin lo borra a los 14 días: guarda el JSON.');
+    if (!seal) {
+      html = row('seal', 'warn', 'Sin sello permanente', 'Este recibo no está en el registro de Asset Hub. Bulletin lo borra a los 14 días: guarda el JSON.');
+    } else {
+      const at = new Date(Number(seal.sealedAt) * 1000).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+      const blk = Number(seal.blockNumber).toLocaleString('en-US');
+      // El contrato guarda lo que le mandó quien selló sin revisarlo; la huella sí amarra los bytes.
+      const samePubkey = String(seal.pubkey).toLowerCase() === String(a.pubkey).toLowerCase();
+      html = samePubkey
+        ? row('seal', 'ok', 'Sello permanente',
+          `Anclado en Asset Hub en el bloque #${blk} (${at}). El texto se escribió entre el bloque #${esc(firstBlk(a))} y el #${blk}, y sigue verificable aunque Bulletin lo borre.`)
+        : row('seal', 'warn', 'Sello con datos distintos',
+          `La huella está sellada en el bloque #${blk} (${at}), pero el sello registra otra llave (<span class="mono">${esc(shortAddr(String(seal.pubkey)))}</span>). La fecha vale; la llave válida es la del recibo.`);
+    }
   } catch {
-    html = row('warn', 'Sello permanente sin comprobar', 'No se pudo consultar el registro en Asset Hub.');
+    html = row('seal', 'warn', 'Sello permanente sin comprobar', 'No se pudo consultar el registro en Asset Hub.');
   }
-  const target = el();
-  if (target) target.outerHTML = html;
+  setRow(root, 'seal', html);
 }

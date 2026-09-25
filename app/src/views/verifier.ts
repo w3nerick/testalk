@@ -1,4 +1,4 @@
-import { icon, type IconName } from '../lib/icons';
+import { icon } from '../lib/icons';
 import { ASSET_HUB_GENESIS, hashAtHeight, withReadClient } from '../lib/chain';
 import { readSeal } from '../lib/registry';
 import {
@@ -15,7 +15,8 @@ import { blake2b } from '@noble/hashes/blake2b';
 import { u8aToHex } from '@polkadot/util';
 import { fetchReceipt } from '../lib/bulletin';
 import { APP_DOTNS } from '../lib/signer';
-import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
+import { asciiBar, asciiStamp } from '../lib/ascii';
+import { esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup, type Tone } from '../ui';
 
 let local: { artifact: Artifact; cid: string } | null = null;
 
@@ -61,11 +62,10 @@ function loading(root: HTMLElement) {
   root.innerHTML = `${topbar()}
     <main class="shell verify">
       <section class="card verdict pending">
-        <span class="badge">${icon('circleNotch', 'spin')}</span>
-        <h1>Buscando el recibo…</h1>
+        <h1>Buscando el recibo<i class="aspin"></i></h1>
         <p class="title">Leyendo Bulletin a través de Polkadot App.</p>
       </section>
-      <div class="skeleton" style="height:180px;border-radius:16px"></div>
+      <div class="skeleton" style="height:180px"></div>
     </main>`;
 }
 
@@ -73,7 +73,7 @@ function failed(root: HTMLElement, msg: string) {
   root.innerHTML = `${topbar()}
     <main class="shell verify">
       <section class="card verdict bad">
-        <span class="badge">${icon('warningCircle')}</span>
+        <pre class="stamp bad" aria-hidden="true">${asciiStamp(['SIN RECIBO'])}</pre>
         <h1>No se pudo abrir el recibo</h1>
         <p class="title">${esc(msg)}</p>
       </section>
@@ -84,18 +84,17 @@ function failed(root: HTMLElement, msg: string) {
 function picker(root: HTMLElement) {
   root.innerHTML = `${topbar()}
     <main class="shell verify">
-      <section class="card verdict pending">
-        <span class="badge">${icon('shieldCheck')}</span>
+      <section class="intro">
         <h1>Verificar un recibo</h1>
-        <p class="title">Escanea el QR de una charla con Polkadot App, o sube aquí el archivo JSON.</p>
+        <p class="lead">Escanea el QR de una charla con Polkadot App, o sube aquí el archivo JSON.</p>
       </section>
       <label class="drop" id="drop">
-        ${icon('fileArrowUp')}
-        <b style="color:var(--text)">Suelta el recibo .json</b>
-        <span style="font-size:14px">o toca para elegirlo</span>
+        <span class="drop-art" aria-hidden="true">[ recibo.json ]</span>
+        <b>Suelta el recibo aquí</b>
+        <span>o toca para elegirlo</span>
         <input type="file" accept="application/json,.json" hidden id="file" />
       </label>
-      <form class="card" id="cid-form" style="padding:20px;display:grid;gap:12px">
+      <form class="card cid-form" id="cid-form">
         <div class="field">
           <label for="cid">O pega un CID</label>
           <input class="input mono" id="cid" placeholder="bafk…" autocomplete="off" spellcheck="false" />
@@ -135,11 +134,8 @@ function picker(root: HTMLElement) {
   });
 }
 
-type Tone = 'ok' | 'bad' | 'warn' | 'wait';
-const toneIcon: Record<Tone, IconName> = { ok: 'checkCircle', bad: 'xCircle', warn: 'warningCircle', wait: 'circleNotch' };
-
 function row(id: string, tone: Tone, title: string, body: string, extra = ''): string {
-  return `<div class="chk ${tone}" id="chk-${id}">${icon(toneIcon[tone], tone === 'wait' ? 'spin' : '')}<b>${title}</b><p>${body}</p>${extra}</div>`;
+  return `<div class="chk ${tone}" id="chk-${id}">${tag(tone)}<b>${title}</b><p>${body}</p>${extra}</div>`;
 }
 
 function setRow(root: HTMLElement, id: string, html: string) {
@@ -159,14 +155,14 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
   root.innerHTML = `${topbar()}
     <main class="shell verify">
       <section class="card verdict pending" id="verdict">
-        ${rehearsal ? `<span class="pill warn tag-rehearsal">Ensayo</span>` : ''}
-        <span class="badge" id="badge">${icon('circleNotch', 'spin')}</span>
-        <h1 id="headline">Verificando…</h1>
+        <pre class="stamp" id="stamp" aria-hidden="true"></pre>
+        ${rehearsal ? `<span class="pill warn">Ensayo</span>` : ''}
+        <h1 id="headline">Verificando<i class="aspin"></i></h1>
         <p class="title">${esc(a.title)}</p>
         <div class="meta">
           <div><span>Speaker</span><b>${esc(who)}</b></div>
           <div><span>Evento</span><b>${esc(a.venue || 'Sin especificar')}</b></div>
-          <div><span>Horario</span><b class="mono">${esc(a.window || '')} · ${new Date(a.started_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</b></div>
+          <div><span>Fecha</span><b>${new Date(a.started_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</b><small class="mono">${esc(a.window || '')}</small></div>
           <div><span>Duración</span><b class="mono">${Number.isFinite(dur) ? fmtDuration(dur) : 'n/d'}</b></div>
         </div>
       </section>
@@ -176,13 +172,16 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
         ${row('seal', 'wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
         ${audioRow(a)}
       </section>
-      <section class="card timeline">
+      <div class="dither-band"></div>
+      <section class="timeline">
         <h2>Lo que se dijo</h2>
-        ${a.chain
-          .map(e => ('s' in e
-            ? `<p class="s">${esc(e.s)}</p>`
-            : `<span class="rivet">${icon('cube')}#${esc(e.blk)} · ${esc(e.time)}</span>`))
-          .join('')}
+        <ol class="rail">
+          ${a.chain
+            .map(e => ('s' in e
+              ? `<li class="s">${esc(e.s)}</li>`
+              : `<li class="b"><span class="mono">■ #${esc(e.blk)}</span><span class="mono t">${esc(e.time)}</span></li>`))
+            .join('')}
+        </ol>
       </section>
       ${limits(a)}
       <div class="actions">
@@ -236,21 +235,25 @@ async function toggleQr(box: HTMLElement, link: string) {
 function limits(a: Artifact): string {
   return `
     <details class="card limits">
-      <summary>${icon('question')}¿Qué prueba este recibo?</summary>
-      <div>
+      <summary>¿Qué prueba este recibo?<span class="mono" aria-hidden="true"></span></summary>
+      <div class="limits-grid">
+        <div>
         <h3>Prueba</h3>
-        <ul>
+        <ul class="yes">
           <li>La llave <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span> firmó exactamente este texto.</li>
           <li>El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}: su hash no se conocía.</li>
           <li>Existía a más tardar cuando se subió a Bulletin o se selló en Asset Hub.</li>
           ${a.audio ? '<li>Si el speaker comparte el audio, se puede comprobar que es la misma grabación.</li>' : ''}
         </ul>
+        </div>
+        <div>
         <h3>No prueba</h3>
-        <ul>
+        <ul class="no">
           <li>Que lo dicho sea cierto. Prueba quién lo dijo, no si tiene razón.</li>
           <li>Que la voz sea de esa persona: el recibo guarda texto, no la voz.</li>
           <li>Que la llave sea de un humano único (eso lo daría Individuality).</li>
         </ul>
+        </div>
       </div>
     </details>`;
 }
@@ -319,14 +322,14 @@ async function run(root: HTMLElement, a: Artifact) {
   const sig: SigCheck = await verifySignature(a);
   setRow(root, 'sig', sig.ok
     ? row('sig', 'ok', 'Firma válida', `sr25519 de <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span>. Nadie cambió una sola letra desde que se firmó.`)
-    : row('sig', 'bad', 'Firma inválida', esc(sig.reason ?? 'La firma no corresponde.')));
+    : row('sig', 'bad', 'Firma inválida', esc(capitalize(sig.reason ?? 'la firma no corresponde.'))));
 
   const blocksCount = a.chain.filter(e => 'full' in e).length;
   let blocks: BlocksCheck;
   try {
     blocks = await verifyBlocks(a, hashAtHeight, ASSET_HUB_GENESIS, (d, t) => {
       const p = root.querySelector('#chk-blocks p');
-      if (p) p.textContent = `Consultando ${d} de ${t} bloques…`;
+      if (p) p.innerHTML = `<span class="mono">${asciiBar(d, t)}</span> ${d} de ${t} bloques`;
     });
   } catch {
     blocks = { status: 'skipped', checked: blocksCount, matched: 0, mismatched: [], unknown: blocksCount, reason: 'sin conexión a la red' };
@@ -344,8 +347,18 @@ async function run(root: HTMLElement, a: Artifact) {
   const v = root.querySelector<HTMLElement>('#verdict')!;
   v.classList.remove('pending');
   v.classList.add(ok ? 'ok' : 'bad');
-  root.querySelector('#badge')!.innerHTML = icon(ok ? 'sealFill' : 'sealWarning');
-  root.querySelector('#headline')!.textContent = ok ? 'Charla verificada' : sig.ok ? 'Anclaje falso' : 'Recibo alterado';
+  const headline = ok ? 'Charla verificada' : sig.ok ? 'Anclaje falso' : 'Recibo alterado';
+  const stamp = root.querySelector<HTMLElement>('#stamp')!;
+  stamp.className = `stamp ${ok ? 'ok' : 'bad'}`;
+  stamp.textContent = asciiStamp([
+    headline.toUpperCase(),
+    ok ? `sr25519 + ${blocks.matched}/${blocksCount} bloques` : sig.ok ? 'bloques inventados' : 'firma inválida',
+  ]);
+  root.querySelector('#headline')!.textContent = headline;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function firstBlk(a: Artifact): string {

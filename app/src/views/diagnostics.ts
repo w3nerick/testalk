@@ -14,7 +14,7 @@ import { fetchReceipt, prepareBulletin, uploadArtifact } from '../lib/bulletin';
 import { cidForBytes, preimageKeyFromCid } from '../lib/artifact';
 import { IPFS_GATEWAY, PUBLIC_WS } from '../lib/network';
 import { STT_URL } from '../lib/stt';
-import { esc, toast, topbar, type Cleanup } from '../ui';
+import { esc, tag, toast, topbar, type Cleanup } from '../ui';
 
 type Status = 'yes' | 'no' | 'skip' | 'run';
 interface Line { name: string; status: Status; detail: string; ms?: number }
@@ -32,7 +32,6 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
   root.innerHTML = `${topbar()}
     <main class="shell verify">
       <section class="card verdict pending">
-        <span class="badge">${icon('question')}</span>
         <h1>Diagnóstico</h1>
         <p class="title">Comprueba cada pieza del devnet desde este dispositivo. Pruébalo en Polkadot Desktop y en el celular.</p>
         <div class="actions">
@@ -41,17 +40,16 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         </div>
         <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda hasta 1 min).</p>
       </section>
-      <section class="card checks" id="out"><div class="chk wait">${icon('question')}<b>Sin ejecutar</b><p>Pulsa Probar.</p></div></section>
+      <section class="card checks" id="out"><div class="chk idle">${tag('idle')}<b>Sin ejecutar</b><p>Pulsa Probar.</p></div></section>
       <div class="actions"><button class="btn" id="copy" disabled>${icon('copy')}Copiar reporte</button></div>
     </main>`;
 
   const out = root.querySelector<HTMLElement>('#out')!;
   const copy = root.querySelector<HTMLButtonElement>('#copy')!;
   const tone = { yes: 'ok', no: 'bad', skip: 'warn', run: 'wait' } as const;
-  const ic = { yes: 'checkCircle', no: 'xCircle', skip: 'warningCircle', run: 'circleNotch' } as const;
   const draw = () => {
     out.innerHTML = lines
-      .map(l => `<div class="chk ${tone[l.status]}">${icon(ic[l.status], l.status === 'run' ? 'spin' : '')}<b>${esc(l.name)}${l.ms !== undefined ? ` <span class="faint mono" style="font-weight:400">${l.ms} ms</span>` : ''}</b><p>${esc(l.detail)}</p></div>`)
+      .map(l => `<div class="chk ${tone[l.status]}">${tag(tone[l.status])}<b>${esc(l.name)}${l.ms !== undefined ? ` <span class="faint mono" style="font-weight:400">${l.ms} ms</span>` : ''}</b><p>${esc(l.detail)}</p></div>`)
       .join('');
   };
   const step = async (name: string, fn: () => Promise<[Status, string]>) => {

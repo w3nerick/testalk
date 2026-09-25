@@ -76,6 +76,7 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | Transcriptor en Python y no en el navegador | Rendimiento de Whisper y garantía de grabación. Coincide con la arquitectura probada en escenario por Proof of Talk. |
 | Formato v1 intacto y campos nuevos aparte | Compatibilidad con los verificadores de Proof of Talk. Los campos nuevos quedan cubiertos por la firma. |
 | Fuentes e íconos dentro del bundle | El contenedor no garantiza acceso a CDNs; la fuente de íconos completa pesaría varios MB en Bulletin, así que solo se importan los SVG usados. |
+| Arte ASCII generado, no dibujado | La onda de voz de la portada, el sello del veredicto y las barras de progreso salen de `app/src/lib/ascii.ts`. Son texto: pesan nada en Bulletin, respetan `prefers-reduced-motion` y cambian de color con el tema. |
 
 ### `contract/` TalkRegistry
 

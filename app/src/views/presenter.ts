@@ -5,7 +5,7 @@ import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type AudioSeal,
 import { connectSpeaker, currentSpeaker, signBytes, APP_DOTNS } from '../lib/signer';
 import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
 import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
-import { esc, fmtDuration, shortAddr, toast, topbar, type Cleanup } from '../ui';
+import { esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
 import { setLocalArtifact } from './verifier';
 
 const DRAFT_KEY = 'testalk-draft';
@@ -77,7 +77,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const sp = currentSpeaker();
     root.innerHTML = `
       ${topbar()}
-      <main class="shell" style="padding:40px 0 64px">
+      <main class="shell" style="padding-block:40px 64px">
         <section class="card setup">
           <div>
             <h2>Prepara tu charla</h2>
@@ -119,15 +119,15 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const drawWallet = (s = currentSpeaker()) => {
       walletRow.className = `check-row ${s ? 'ok' : ''}`;
       walletRow.innerHTML = s
-        ? `${icon('checkCircle')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
+        ? `${tag('ok')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
              <div class="muted mono" style="font-size:12.5px">${s.rehearsal ? 'Ensayo: cuenta de prueba, fuera de Polkadot App' : esc(shortAddr(s.address))}</div></div>`
-        : `${icon('signature')}<div class="grow">Wallet del speaker<div class="muted" style="font-size:13px">Firma el recibo al final</div></div>
+        : `${tag('idle')}<div class="grow">Wallet del speaker<div class="muted" style="font-size:13px">Firma el recibo al final</div></div>
            <button class="btn sm primary" id="connect">Conectar</button>`;
       start.disabled = !s;
       walletRow.querySelector('#connect')?.addEventListener('click', async ev => {
         const b = ev.currentTarget as HTMLButtonElement;
         b.disabled = true;
-        b.innerHTML = `${icon('circleNotch', 'spin')}Abriendo`;
+        b.innerHTML = `Abriendo<i class="aspin"></i>`;
         err.innerHTML = '';
         try {
           drawWallet(await connectSpeaker());
@@ -141,18 +141,18 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       sttRow.className = `check-row ${s === 'on' ? 'ok' : ''}`;
       sttRow.innerHTML =
         s === 'on'
-          ? `${icon('checkCircle')}<div class="grow">Transcriptor conectado<div class="muted" style="font-size:13px">Escuchando el micrófono</div></div>`
-          : `${icon('microphoneSlash')}<div class="grow">Transcriptor apagado
+          ? `${tag('ok')}<div class="grow">Transcriptor conectado<div class="muted" style="font-size:13px">Escuchando el micrófono</div></div>`
+          : `${tag('idle')}<div class="grow">Transcriptor apagado
                <div><code>python stt/testalk_stt.py --language ${esc((root.querySelector('#lang') as HTMLSelectElement)?.value ?? 'es')}</code></div>
                <div class="muted" style="font-size:13px">Opcional: también puedes escribir frases a mano.</div></div>`;
     };
     const drawChain = () => {
       chainRow.className = `check-row ${latest ? 'ok' : ''}`;
       chainRow.innerHTML = latest
-        ? `${icon('checkCircle')}<div class="grow">Asset Hub conectado<div class="muted mono" style="font-size:12.5px">bloque #${latest.number.toLocaleString('en-US')}</div></div>`
+        ? `${tag('ok')}<div class="grow">Asset Hub conectado<div class="muted mono" style="font-size:12.5px">bloque #${latest.number.toLocaleString('en-US')}</div></div>`
         : chainError
-          ? `${icon('warningCircle')}<div class="grow">Sin conexión a la red<div class="muted" style="font-size:13px">${esc(chainError)}</div></div>`
-          : `${icon('circleNotch', 'spin')}<div class="grow">Conectando a Asset Hub…</div>`;
+          ? `${tag('warn')}<div class="grow">Sin conexión a la red<div class="muted" style="font-size:13px">${esc(chainError)}</div></div>`
+          : `${tag('wait')}<div class="grow">Conectando a Asset Hub</div>`;
     };
     drawWallet(sp);
     drawStt(sttStatus);
@@ -192,9 +192,9 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       <main class="shell stage">
         <section class="card transcript"><div class="lines" id="lines"></div></section>
         <aside class="side">
-          <div class="card" style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="card pills">
             <span class="pill" id="stt-pill"></span>
-            <span class="pill live" id="blk-pill">${icon('cube')}<span class="mono" id="blk-n">…</span></span>
+            <span class="pill live" id="blk-pill">■ <span id="blk-n">…</span></span>
           </div>
           <div class="card stats">
             <div class="stat"><b id="st-time">0:00</b><span>duración</span></div>
@@ -226,7 +226,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const addRivet = (e: Extract<ChainEntry, { full: string }>) => {
       const el = document.createElement('span');
       el.className = 'rivet';
-      el.innerHTML = `${icon('cube')}#${esc(e.blk)} · ${esc(e.h)}`;
+      el.innerHTML = `■ #${esc(e.blk)} · ${esc(e.h)}`;
       lines.append(el);
       trim();
     };
@@ -279,7 +279,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     };
     const drawStt = (s: SttStatus) => {
       sttPill.className = `pill ${s === 'on' ? 'on' : 'off'}`;
-      sttPill.innerHTML = s === 'on' ? `${icon('microphone')}escuchando` : `${icon('microphoneSlash')}sin transcriptor`;
+      sttPill.innerHTML = s === 'on' ? `<i class="ameter" aria-hidden="true"></i>escuchando` : `${icon('microphoneSlash')}sin transcriptor`;
     };
     drawStt(sttStatus);
     if (latest) blkN.textContent = `#${latest.number.toLocaleString('en-US')}`;
@@ -320,8 +320,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const draw = (at: number, error?: string) => {
       box.innerHTML = `
         <div class="progress-steps">
-          ${steps.map(([ic, label], i) => `<div class="${i < at ? 'done' : i === at ? 'doing' : ''}">
-            ${i < at ? icon('checkCircle') : i === at && !error ? icon('circleNotch', 'spin') : icon(ic)}${label}</div>`).join('')}
+          ${steps.map(([, label], i) => `<div class="${i < at ? 'done' : i === at ? 'doing' : ''}">
+            ${tag(i < at ? 'ok' : i === at ? (error ? 'bad' : 'wait') : 'idle')}${label}</div>`).join('')}
         </div>
         ${error ? `<div class="error-box" style="margin-top:14px">${icon('warningCircle')}${esc(error)}</div>
           <button class="btn primary block" id="retry" style="margin-top:12px">${signed ? 'Reintentar subida' : 'Reintentar'}</button>

@@ -12,11 +12,25 @@ export function $(sel: string, root: ParentNode = document): HTMLElement {
 }
 
 export function topbar(extra = ''): string {
+  const at = location.hash.replace(/^#\/?/, '');
+  const link = (path: string, label: string) =>
+    `<a href="#/${path}"${at === path ? ' class="active" aria-current="page"' : ''}>${label}</a>`;
   return `
-  <header class="shell topbar">
-    <a class="brand" href="#/"><span class="brand-mark">${icon('waveform')}</span>testalk</a>
-    <div class="grow">${extra}</div>
+  <header class="topbar">
+    <div class="shell topbar-in">
+      <a class="brand" href="#/"><span class="brand-mark">${icon('waveform')}</span>testalk</a>
+      <div class="grow">${extra}</div>
+      <nav class="nav">${link('presentar', 'Presentar')}${link('verificar', 'Verificar')}</nav>
+    </div>
   </header>`;
+}
+
+export type Tone = 'ok' | 'bad' | 'warn' | 'wait' | 'idle';
+
+/** Estado en texto de terminal: `[ OK ]`, `[FALLA]`, `[ !! ]`, `[ .. ]`. */
+export function tag(tone: Tone): string {
+  const label = { ok: ' OK ', bad: 'FALLA', warn: ' !! ', wait: '', idle: ' -- ' }[tone];
+  return `<span class="tag ${tone}" aria-hidden="true">[${tone === 'wait' ? '<i class="aspin"></i>' : label}]</span>`;
 }
 
 export function shortAddr(a: string): string {

@@ -9,8 +9,8 @@
 Graba una charla, entrelaza cada frase con block hashes reales de Asset Hub,
 fírmala con tu wallet y publica un recibo que cualquiera verifica con un QR.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-e6007a.svg)](LICENSE)
-![Network](https://img.shields.io/badge/red-Products%20Devnet-e6007a)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
+![Network](https://img.shields.io/badge/red-Products%20Devnet-111111)
 ![Signature](https://img.shields.io/badge/firma-sr25519-555)
 ![Storage](https://img.shields.io/badge/storage-Bulletin-555)
 ![STT](https://img.shields.io/badge/STT-faster--whisper-555)
@@ -53,12 +53,12 @@ inventa un bloque, la cadena lo desmiente.
   <tr>
     <td width="33%"><img src="docs/img/mobile-verified.png" alt="Recibo verificado en el celular" /></td>
     <td width="33%"><img src="docs/img/mobile-tampered.png" alt="Recibo alterado detectado" /></td>
-    <td width="33%"><img src="docs/img/mobile-light.png" alt="Verificador en modo claro" /></td>
+    <td width="33%"><img src="docs/img/mobile-dark.png" alt="Verificador en modo oscuro" /></td>
   </tr>
   <tr>
     <td align="center"><sub>Recibo verificado</sub></td>
     <td align="center"><sub>Una palabra cambiada: firma inválida</sub></td>
-    <td align="center"><sub>Modo claro</sub></td>
+    <td align="center"><sub>Modo oscuro</sub></td>
   </tr>
 </table>
 
@@ -268,7 +268,8 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
   otra red y lo extiende.
 - Transcripción: [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
 - Plataforma: Polkadot App, Bulletin, DotNS y `pad` de la Polkadot Community Foundation.
-- Íconos: [Phosphor](https://phosphoricons.com). Tipografía: [Geist](https://vercel.com/font).
+- Íconos: [Phosphor](https://phosphoricons.com). Tipografía: DM Serif Display, DM Sans y Space Mono.
+- Lenguaje visual: el mismo del sitio de Polkadot México (papel crema, tinta, sombras duras, dither y acentos ASCII).
 
 ## Licencia
 

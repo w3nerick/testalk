@@ -69,9 +69,10 @@ sequenceDiagram
     autonumber
     participant M as Micrófono
     participant S as stt/ (Whisper local)
-    participant A as app/ (testalk.dot)
+    participant A as app/ (testalk26.dot)
     participant H as Asset Hub
     participant W as Polkadot App (wallet)
+    participant P as People chain
     participant B as Bulletin
 
     H-->>A: bloque finalizado N (ancla de inicio)
@@ -83,10 +84,12 @@ sequenceDiagram
     end
     A->>S: seal
     S-->>A: huella blake2b-256 del WAV
-    A->>W: firmar bytes canónicos del recibo
+    A->>P: ¿de quién es mi username?
+    P-->>A: cuenta dueña
+    A->>W: firmar bytes canónicos con esa cuenta
     W-->>A: firma sr25519
     A->>B: subir recibo (preimage)
-    A-->>A: QR a https://testalk.dot/#/<CID>
+    A-->>A: QR a https://testalk26.dev-dot.li/#/<CID>
     Note over A,H: después de la charla
     A->>H: TalkRegistry.seal(huella, firma, ...) en pallet-revive
 ```
@@ -99,6 +102,7 @@ especificación del recibo en [`docs/receipt-format.md`](docs/receipt-format.md)
 | ✅ Prueba | ❌ No prueba |
 |---|---|
 | Esta llave firmó **exactamente** este texto | Que la voz sea del firmante (el audio no viaja en el recibo) |
+| La llave es la dueña del **username** del recibo en People chain (si se firmó con la identidad `.dot`) | |
 | El texto **no existía antes** del primer bloque | Que se haya dicho en vivo |
 | El recibo **ya existía** en el bloque en que se ancló en `TalkRegistry` | |
 | Cada block hash **existe** en Asset Hub a esa altura | Que el firmante sea una persona única (falta Individuality) |
@@ -123,11 +127,11 @@ Lo que cambia:
 |---|---|---|
 | Red | Red del Web3 Summit | Products Devnet (Asset Hub `0xd6eec2…`) |
 | Bloques | `bestBlocks$` (pueden revertirse en un reorg) | `finalizedBlock$` (no se revierten) |
-| Verificador | Solo firma | Firma **y** cada block hash consultado en la cadena |
+| Verificador | Solo firma | Firma, cada block hash consultado en la cadena **y** que el username sea dueño de la llave |
 | Audio | WAV local, fuera del recibo | Huella blake2b-256 del WAV **dentro** del recibo firmado |
 | Cierre | Última frase sin bloque posterior | Remache de bloque al sellar |
-| Firmante | `getLegacyAccountSigner` | `SignerManager` (el que abre la hoja de firma en este devnet) |
-| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://testalk.dot/#/<cid>` |
+| Firmante | `getLegacyAccountSigner` del dueño del username | Lo mismo; si el host no lo permite, la cuenta de la app, y el verificador lo dice |
+| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://testalk26.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
 | Verificación sin app | No | CLI: `npm run verify` |
 | Permanencia | Bulletin (14 días) | Registro en pallet-revive: [`TalkRegistry`](contract/) |
 | Ensayo | Requiere el host | Modo ensayo en cualquier navegador |
@@ -136,13 +140,14 @@ Lo que cambia:
 
 ```
 testalk/
-├── app/                        Interfaz web (se publica en testalk.dot)
+├── app/                        Interfaz web (se publica en testalk26.dot)
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── artifact.ts     Formato del recibo, firma canónica, CID, verificación
 │   │   │   ├── chain.ts        Asset Hub: host provider o WebSocket público
 │   │   │   ├── network.ts      Genesis, RPCs y gateway del devnet
-│   │   │   ├── signer.ts       SignerManager (host) o cuenta de ensayo
+│   │   │   ├── signer.ts       Firma con la identidad .dot, la cuenta de la app o la de ensayo
+│   │   │   ├── people.ts       People chain: dueño de un username
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
 │   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
@@ -234,12 +239,12 @@ npm run verify -- /tmp/pot.json   # firma válida; bloques de otra red, sin comp
 ```bash
 cd app
 pad login          # una vez: QR con Polkadot App
-npm run deploy     # build + PAD_ENV=devnet pad dist testalk.dot
+npm run deploy     # build + PAD_ENV=devnet pad dist testalk26.dot
 ```
 
 Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
 
-Después abre **`testalk.dot/#/diagnostico`** en Polkadot Desktop y en el
+Después abre **`testalk26.dot/#/diagnostico`** en Polkadot Desktop y en el
 celular. Prueba cada pieza de la plataforma desde el dispositivo (canal con el
 host, permisos de red, micrófono, WebGPU, bloques, consulta histórica,
 transcriptor, firma y Bulletin) y deja un reporte copiable.
@@ -258,11 +263,13 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Flujo completo probado en modo ensayo contra el devnet real
 - [x] Código alineado con el comportamiento medido del devnet ([detalle](docs/deploy.md#comportamiento-conocido-del-devnet))
 - [ ] Prueba en Polkadot Desktop y celular: firma de bytes con `SignerManager`, subida a Bulletin y acceso a `localhost`
-- [ ] Resolver los hallazgos de la [revisión del 25 sep 2026](docs/platform-review-2026-09-25.md) contra TWR.DOT y la documentación de PCF
+- [x] Corregir en código los hallazgos de la [revisión del 25 sep 2026](docs/platform-review-2026-09-25.md) contra TWR.DOT y la documentación de PCF; los que dependen del dispositivo se miden con `#/diagnostico`
 - [x] `TalkRegistry` desplegado en pallet-revive: huella, firma y cota superior de tiempo, permanentes
 - [x] Verificador web y CLI consultan el registro
 - [ ] Anclar desde la app al sellar (hoy se ancla con `npm run anchor` después de la charla)
-- [ ] Verificar en People chain que el username declarado sea dueño de la llave (requiere firmar con la identidad `.dot`, ver la [revisión de plataforma](docs/platform-review-2026-09-25.md))
+- [x] Verificar en People chain que el username declarado sea dueño de la llave (web y CLI)
+- [x] Firmar con la identidad `.dot` (username → People chain → cuenta dueña), con la cuenta de la app de respaldo
+- [ ] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): lo mide `#/diagnostico`
 - [x] Comparar un WAV contra la huella desde el verificador
 - [ ] Grabar y transcribir **dentro de la app** (permiso `Microphone` + Whisper con WebGPU), sin el script de Python. El diagnóstico ya mide si el dispositivo lo permite
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin

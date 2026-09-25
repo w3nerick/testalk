@@ -9,7 +9,9 @@ varias cosas que nadie ha medido en este host y que solo
 [`#/diagnostico`](../app/src/views/diagnostics.ts) puede responder en Polkadot
 Desktop y en el celular.
 
-Todos los hallazgos quedan **pendientes**: este documento no cambia código.
+Los hallazgos se corrigieron en código el mismo día (dominio `testalk26`); el
+estado de cada uno está en [Estado](#estado). Lo que depende del dispositivo
+sigue abierto hasta correr el diagnóstico.
 
 ## Fuentes
 
@@ -240,7 +242,32 @@ De la documentación de PCF y de la actualización de septiembre:
 - [ ] Siempre `--env devnet`. El script usa `PAD_ENV=devnet`: `pad` 0.16.6 lo respeta (`--env` gana si están los dos).
 - [ ] Después: `dotns content view <nombre> --env devnet` para confirmar el CID.
 
-## Orden sugerido
+## Estado
+
+Correcciones del 25 sep 2026:
+
+| # | Estado | Qué se hizo |
+|---|---|---|
+| H1 | Corregido | La dirección mostrada sale de `pubkey`; `speaker_address` distinto a `pubkey` es **Dirección falsa**; el nombre se muestra como declarado hasta que People chain lo confirme; el veredicto pasa a **Identidad falsa**. Web y CLI. `impersonated-uanl.json` en CI. |
+| H2 | Corregido, falta medir en Desktop | El presentador firma con la cuenta dueña del username (`lib/people.ts` + `getLegacyAccountSigner`), con la cuenta de la app de respaldo (botón **Firmar con la cuenta de la app**); el recibo lleva `dotns` solo si firmó el dueño. El verificador comprueba `UsernameOwnerOf`. Probado contra la People chain real (`kiuber.01`, username inexistente). |
+| H3 | Corregido | Dominio `testalk26` (libre): `lib/network.ts`, `package.json`, `polkadot-app-deploy.config.ts`. |
+| H4 | Corregido, falta medir | QR a `https://testalk26.dev-dot.li/#/<cid>`; el enlace `.dot` va como texto. Comprobar tras el deploy que el gateway conserve el `#`. |
+| H5 | Corregido | Se compara la clave devuelta con el blake2b-256; tope de 180 s; un reintento busca antes si ya subió. |
+| H6 | Mitigado, falta medir | El verificador fuera del contenedor ofrece abrir el recibo en el gateway; el diagnóstico prueba la lectura por el host y por el gateway por separado. |
+| H7 | Abierto | Se mantienen las versiones hasta correr el diagnóstico. `polkadot-api` se queda en 2.x. `pad` actualizado a la última versión en la máquina de deploy. |
+| H8 | Corregido | El diagnóstico suma: cadenas que sirve el host (`isChainSupported`), cuentas del wallet, username en People chain, firma con identidad, firma con la cuenta de la app, clave devuelta por Bulletin, lectura por host y por gateway, y `TalkRegistry` por el cliente principal. |
+| H9 | Corregido | **Copiar JSON** en el presentador y en el verificador. |
+| H10 | Corregido | `localhost` solo se pide en `#/presentar` y `#/diagnostico`. |
+| H11 | Corregido | `artifactShapeError()` antes de mostrar nada, en web y CLI. |
+
+Hallazgo nuevo al probar las correcciones: la primera consulta a People chain
+desde un navegador tardó **23.2 s** con `people-paseo.rotko.net`, contra 2.9 s
+(`gatotech`) y 3.1 s (`interweb-it`). Con un tope de 15 s y rotko primero en la
+lista, la identidad salía "sin comprobar". Ahora los endpoints van ordenados por
+esa medición y, si uno se vence, se reintenta con el siguiente
+([`people.ts`](../app/src/lib/people.ts)).
+
+## Orden sugerido (original)
 
 1. H1: corregir el verificador (no depende del dispositivo).
 2. H8: ampliar el diagnóstico.

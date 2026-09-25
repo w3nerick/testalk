@@ -13,7 +13,7 @@ cuenta mapeada.
 cd app
 npm install
 pad login          # una vez; QR con Polkadot App. El handshake puede tardar minutos.
-npm run deploy     # npm run build && PAD_ENV=devnet pad dist testalk.dot
+npm run deploy     # npm run build && PAD_ENV=devnet pad dist testalk26.dot
 ```
 
 - Corre `pad` en una terminal propia: pide confirmaciones interactivas.
@@ -32,14 +32,14 @@ Comprobación: el CID final debe resolver en
 | 6 a 8 | Requiere **Full** Personhood; si no la tienes, el registro falla después de la transacción de commit |
 | 9 o más | Registro abierto |
 
-`testalk` tiene 7 y está libre (consultado el 25 sep 2026). Si la cuenta no
-tiene Full Personhood, usa un nombre de 9 o más (por ejemplo `testalk26`) y
-cámbialo en tres lugares **antes** de registrar nada
-([H3](platform-review-2026-09-25.md#h3-testalkdot-requiere-full-personhood)):
+El dominio es **`testalk26`**: 9 letras, registro abierto, libre al 25 sep 2026
+(`testalk` tiene 7 y exigiría Full Personhood,
+[H3](platform-review-2026-09-25.md#h3-testalkdot-requiere-full-personhood)).
+Si alguna vez cambia, cámbialo en tres lugares **antes** de registrar nada:
 
 - `app/package.json` → script `deploy`
 - `app/polkadot-app-deploy.config.ts` → `domain`
-- `app/src/lib/signer.ts` → `APP_DOTNS` (también define la URL del QR)
+- `app/src/lib/network.ts` → `APP_LABEL` (define la URL del QR, el gateway y la cuenta de producto de la app)
 
 ## Preparar la laptop del speaker
 
@@ -57,7 +57,8 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 ## Checklist del día del evento
 
 **Una semana antes**
-- [ ] Abrir `testalk.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional.
+- [ ] Abrir `testalk26.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional. Las filas clave: **Firma con identidad .dot**, **Bulletin: subida y clave** y las dos lecturas.
+- [ ] Abrir `https://testalk26.dev-dot.li/#/<CID de la prueba>` en un celular **sin** Polkadot App: debe abrir el recibo (el gateway conserva el `#`).
 - [ ] Charla de prueba completa en Desktop, sellada y verificada desde otro celular
 - [ ] Confirmar que el QR proyectado se lee desde el fondo de la sala
 
@@ -65,8 +66,8 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Laptop conectada a corriente y a una red estable
 - [ ] Micrófono correcto (`--list-mics`); sin audífonos Bluetooth robando la entrada
 - [ ] Transcriptor arrancado y con el modelo caliente
-- [ ] Polkadot Desktop abierto en `testalk.dot/#/presentar`
-- [ ] Wallet conectada: la fila de wallet en verde
+- [ ] Polkadot Desktop abierto en `testalk26.dot/#/presentar`
+- [ ] Wallet conectada: la fila de wallet en verde y diciendo **Firmarás con tu identidad .dot**
 - [ ] Las tres filas de preparación en verde
 
 **Al terminar**
@@ -83,12 +84,12 @@ con apps reales en el contenedor. testalk ya está escrito para convivir con est
 | Hecho | Consecuencia en testalk |
 |---|---|
 | En **Android** la subida de preimages falla con un error de codec; en **Desktop 0.1.1** funciona | Sellar siempre desde Polkadot Desktop. El público puede verificar desde el celular. |
-| La subida tarda unos **64 s** | El paso de subida avisa "hasta 1 min" y espera hasta 90 s |
+| La subida tarda unos **64 s** (37 bytes) | El paso de subida avisa "1 a 3 min", espera hasta 180 s y, si se reintenta, busca primero si ya subió |
 | `BulletinAllowance` responde `NotAvailable` y la subida funciona igual | `NotAvailable` es un aviso; solo `Rejected` detiene |
 | `lookup` reporta `null` hasta encontrar el preimage | El verificador ignora los `null` y espera hasta 20 s |
 | La red dentro del contenedor necesita el permiso `Remote` por dominio | Se piden al arrancar: `localhost`, el gateway IPFS y los RPC públicos |
 | `localStorage` se vacía con cada release | El borrador de la charla dura la sesión; no publiques una versión nueva durante una charla |
-| `SignerManager` entrega una cuenta de producto de la app, nunca la identidad del usuario | Pendiente: firmar con la identidad `.dot` ([H2](platform-review-2026-09-25.md#h2-la-firma-sale-de-una-cuenta-de-producto-no-de-la-identidad-del-speaker)) |
+| `SignerManager` entrega una cuenta de producto de la app, nunca la identidad del usuario | Se firma con la cuenta dueña del username en People chain; la de producto queda de respaldo y el recibo lo refleja |
 | En `*.dev-dot.li` el web shell no deriva cuentas de producto (TWR #18) | Presentar solo desde Polkadot Desktop; verificar sí funciona ahí |
 
 ## Si algo falla
@@ -98,5 +99,6 @@ con apps reales en el contenedor. testalk ya está escrito para convivir con est
 | "sin transcriptor" en vivo | Seguir hablando; escribir frases clave en "Añadir frase a mano". El WAV se sigue grabando. |
 | Asset Hub no conecta | No empezar: sin ancla de inicio el recibo no prueba nada. Revisar la red. |
 | La firma no llega | Revisar el celular; el botón **Reintentar** vuelve a pedirla sin perder la charla. |
-| Bulletin no confirma | La charla ya está firmada: **Reintentar subida** no vuelve a pedir la firma. Si persiste, **Seguir sin Bulletin** y descargar el JSON; se verifica igual con el CLI. |
+| La firma con identidad falla | **Firmar con la cuenta de la app**: el recibo vale, pero no queda ligado a tu username. |
+| Bulletin no confirma | La charla ya está firmada: **Reintentar subida** no vuelve a pedir la firma y revisa primero si ya subió. Si persiste, **Seguir sin Bulletin** y descargar o **copiar** el JSON; se verifica igual con el CLI. |
 | Se recargó la página | En preparación aparece **Recuperar charla sin sellar**. |

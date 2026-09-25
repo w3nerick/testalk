@@ -559,6 +559,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 400; }
 }
 .meta b { font-weight: 500; font-size: 15px; overflow-wrap: anywhere; }
 .meta small { font-size: 12.5px; color: var(--muted); }
+.meta small.bad { color: var(--bad); font-weight: 600; }
 
 .checks { padding: 4px 24px; }
 .chk { display: grid; grid-template-columns: 8ch 1fr; gap: 4px 12px; padding: 18px 0; }

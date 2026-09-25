@@ -47,6 +47,12 @@ export function toast(msg: string): void {
   setTimeout(() => t.remove(), 2200);
 }
 
+/** Copia texto al portapapeles (permiso Clipboard pedido al arrancar) y lo avisa. */
+export function copyText(text: string, done: string): void {
+  if (!navigator.clipboard) return toast('Este contenedor no permite copiar');
+  navigator.clipboard.writeText(text).then(() => toast(done), () => toast('No se pudo copiar'));
+}
+
 export function fmtDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(s / 60);

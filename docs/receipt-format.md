@@ -9,8 +9,8 @@ salvo `pubkey`, `sig` y `sig_alg`, quedan cubiertas por la firma.
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `v` | `1` | Versión del formato |
-| `speaker` | string | Nombre mostrado: username de Polkadot App o dirección abreviada |
-| `dotns` | string | Username del speaker, vacío si el host no lo entrega |
+| `speaker` | string | Nombre mostrado: username de Polkadot App o dirección abreviada. **Declarado**: nadie lo comprueba |
+| `dotns` | string | Username **cuya cuenta dueña firmó** el recibo. El verificador consulta `Resources.UsernameOwnerOf` en People chain y exige que sea `pubkey`. Vacío si firmó la cuenta de la app o no hay username |
 | `title` | string | Título de la charla |
 | `venue` | string | Evento o lugar |
 | `started_at` | ISO 8601 UTC | Primera frase |
@@ -31,7 +31,7 @@ salvo `pubkey`, `sig` y `sig_alg`, quedan cubiertas por la firma.
 | `network` | `"products-devnet"` | Red de los bloques |
 | `genesis` | hex | Genesis de Asset Hub. Sin él, el verificador no consulta bloques |
 | `lang` | string | Idioma de la transcripción |
-| `speaker_address` | SS58 | Dirección del firmante |
+| `speaker_address` | SS58 | Dirección de `pubkey` (prefijo 42). Si no corresponde a `pubkey`, el verificador marca **Dirección falsa** |
 | `audio` | objeto o `null` | `{ alg: "blake2b-256", hash, bytes, seconds }` del WAV |
 | `rehearsal` | `true` | Solo en recibos de ensayo firmados con cuenta de prueba |
 

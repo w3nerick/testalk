@@ -3,16 +3,19 @@
  * y deja un reporte copiable. Idea tomada de chirp (TWR.DOT): medir en el
  * dispositivo antes de culpar al host o de confiar en un valor de retorno.
  */
-import { isInsideContainerSync, requestDevicePermission, requestPermission } from '@parity/product-sdk-host';
-import { cryptoWaitReady, signatureVerify } from '@polkadot/util-crypto';
+import { getAccountsProvider, isChainSupported, isInsideContainerSync, requestDevicePermission, requestPermission } from '@parity/product-sdk-host';
+import { cryptoWaitReady, encodeAddress, signatureVerify } from '@polkadot/util-crypto';
 import { hexToU8a } from '@polkadot/util';
 import { icon } from '../lib/icons';
-import { waitForHost, withTimeout, TIMED_OUT, describeError } from '../lib/host';
-import { getClient, hashVia, hashAtHeight, subscribeFinalized, type Block } from '../lib/chain';
-import { connectSpeaker, currentSpeaker, signBytes } from '../lib/signer';
-import { fetchReceipt, prepareBulletin, uploadArtifact } from '../lib/bulletin';
-import { cidForBytes, preimageKeyFromCid } from '../lib/artifact';
-import { IPFS_GATEWAY, PUBLIC_WS } from '../lib/network';
+import { waitForHost, withTimeout, TIMED_OUT, describeError, HOST_QUERY_MS } from '../lib/host';
+import { ASSET_HUB_GENESIS, getClient, hashVia, hashAtHeight, subscribeFinalized, type Block } from '../lib/chain';
+import { connectSpeaker, currentSpeaker, hasIdentitySigner, identityUnavailableReason, keyFor, signBytes, type SignerKind } from '../lib/signer';
+import { lookupViaHost, prepareBulletin, uploadArtifact, viaGateway } from '../lib/bulletin';
+import { cidForBytes } from '../lib/artifact';
+import { IPFS_GATEWAY, PEOPLE_GENESIS } from '../lib/network';
+import { usernameOwner } from '../lib/people';
+import { readSeal } from '../lib/registry';
+import { remoteDomains, requestHostPermissions } from '../lib/permissions';
 import { STT_URL } from '../lib/stt';
 import { esc, tag, toast, topbar, type Cleanup } from '../ui';
 
@@ -25,9 +28,13 @@ async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
   return [v, Math.round(performance.now() - t0)];
 }
 
+/** Huella del primer recibo sellado en TalkRegistry (charla "Test", 24 sep 2026, bloque #13,649,506). */
+const KNOWN_SEAL = '0xaa92853edc1f3e59d3dacc1ff0d2517f70ddf7787cc23dd554ebca3847918e2c';
+
 export function renderDiagnostics(root: HTMLElement): Cleanup {
   const lines: Line[] = [];
   let dead = false;
+  requestHostPermissions({ localhost: true });
 
   root.innerHTML = `${topbar()}
     <main class="shell verify">
@@ -75,7 +82,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     if (inside) await step('Canal con el host', async () => ((await waitForHost()) ? ['yes', 'connected'] : ['no', 'no llegó a connected en 12 s']));
     if (inside) {
       await step('Permiso de red (Remote)', async () => {
-        const domains = ['localhost', new URL(IPFS_GATEWAY).hostname, ...PUBLIC_WS.map(u => new URL(u).hostname)];
+        const domains = remoteDomains(true);
         const r = await withTimeout(requestPermission({ tag: 'Remote', value: { domains } }), 8000);
         if (r === TIMED_OUT) return ['no', 'sin respuesta'];
         return r.ok && r.value ? ['yes', domains.join(', ')] : ['no', JSON.stringify(r)];
@@ -83,6 +90,15 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     }
 
     if (inside) {
+      for (const [name, genesis] of [['Asset Hub', ASSET_HUB_GENESIS], ['People chain', PEOPLE_GENESIS]] as const) {
+        await step(`El host sirve ${name}`, async () => {
+          const r = await withTimeout(isChainSupported(genesis), HOST_QUERY_MS);
+          if (r === TIMED_OUT) return ['no', 'sin respuesta'];
+          // ok=false: no se pudo preguntar, que no es lo mismo que "no la sirve".
+          if (!r.ok) return ['skip', `no se pudo preguntar: ${describeError(r.error)}`];
+          return r.value ? ['yes', 'isChainSupported: sí'] : ['no', 'isChainSupported: no (se usará el RPC público)'];
+        });
+      }
       await step('Micrófono: permiso del host', async () => {
         const r = await withTimeout(requestDevicePermission('Microphone'), 30_000);
         if (r === TIMED_OUT) return ['no', 'el host no respondió'];
@@ -133,6 +149,14 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
       });
     }
 
+    await step('TalkRegistry (cliente principal)', async () => {
+      const seal = await withTimeout(readSeal(await getClient(), KNOWN_SEAL), 20_000);
+      if (seal === TIMED_OUT) return ['no', 'sin respuesta en 20 s'];
+      return seal
+        ? ['yes', `sello conocido en el bloque #${Number(seal.blockNumber).toLocaleString('en-US')}`]
+        : ['no', 'el registro respondió que no existe el sello conocido'];
+    });
+
     await step('Transcriptor local', async () =>
       new Promise<[Status, string]>(resolve => {
         let ws: WebSocket;
@@ -152,32 +176,72 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
       return r instanceof Error ? ['no', r.message] : ['yes', `responde (HTTP ${r.status} en la raíz)`];
     });
 
+    if (inside) {
+      await step('Cuentas del wallet (getLegacyAccounts)', async () => {
+        const ap = await withTimeout(getAccountsProvider(), HOST_QUERY_MS);
+        if (ap === TIMED_OUT || !ap) return ['no', 'el host no entregó el proveedor de cuentas'];
+        const r = await withTimeout(Promise.resolve(ap.getLegacyAccounts()), HOST_QUERY_MS);
+        if (r === TIMED_OUT) return ['no', 'sin respuesta'];
+        if (r.isErr()) return ['no', describeError(r.error)];
+        // Desktop no enumera cuentas por diseño (según el SDK): cero no es un error.
+        return [r.value.length ? 'yes' : 'skip', `${r.value.length} cuenta(s) del wallet visibles para la app`];
+      });
+    }
+
     await step('Wallet (SignerManager)', async () => {
       const sp = currentSpeaker() ?? (await connectSpeaker());
-      return ['yes', `${sp.username ?? 'sin username'} · ${sp.address}${sp.rehearsal ? ' · ensayo' : ''}`];
+      const kind = { identity: 'firmará con la identidad .dot', app: 'firmará con la cuenta de la app', rehearsal: 'ensayo' }[sp.kind];
+      return ['yes', `${sp.username ?? 'sin username'} · ${sp.address} · ${kind}`];
     });
 
     const sp = currentSpeaker();
-    if (sp) {
-      await step('Firma de bytes (signRaw)', async () => {
-        const msg = new TextEncoder().encode(`testalk diagnóstico ${new Date().toISOString()}`);
-        const sig = await signBytes(msg);
-        await cryptoWaitReady();
-        const v = signatureVerify(msg, hexToU8a(sig), hexToU8a(sp.pubkey));
-        return v.isValid ? ['yes', `${v.crypto}${v.isWrapped ? ', envuelta en <Bytes>' : ''}`] : ['no', 'la firma no valida contra la llave'];
+    if (sp && inside) {
+      await step('Username en People chain', async () => {
+        if (!sp.username) return ['skip', 'la cuenta no tiene username'];
+        const owner = await usernameOwner(sp.username);
+        return owner
+          ? ['yes', `${sp.username} → ${encodeAddress(hexToU8a(owner), 42)}`]
+          : ['no', `${sp.username} no aparece en Resources.UsernameOwnerOf`];
       });
     }
+    const signProbe = (kind: SignerKind) => async (): Promise<[Status, string]> => {
+      const key = keyFor(kind);
+      if (!key) return ['skip', 'sin llave para este camino'];
+      const msg = new TextEncoder().encode(`testalk diagnóstico ${new Date().toISOString()}`);
+      const sig = await signBytes(msg, kind);
+      await cryptoWaitReady();
+      const v = signatureVerify(msg, hexToU8a(sig), hexToU8a(key));
+      return v.isValid ? ['yes', `${v.crypto}${v.isWrapped ? ', envuelta en <Bytes>' : ''}`] : ['no', 'la firma no valida contra la llave'];
+    };
+    if (sp && inside) {
+      if (hasIdentitySigner()) await step('Firma con identidad .dot (signRawWithLegacyAccount)', signProbe('identity'));
+      else await step('Firma con identidad .dot', async () => ['skip', identityUnavailableReason() ?? 'no disponible']);
+    }
+    if (sp) await step(sp.rehearsal ? 'Firma de ensayo (signRaw)' : 'Firma con la cuenta de la app (signRaw)', signProbe(sp.rehearsal ? 'rehearsal' : 'app'));
 
     if (withBulletin && inside && !sp?.rehearsal) {
       await step('Bulletin: cuota y permiso', async () => { await prepareBulletin(); return ['yes', 'PreimageSubmit concedido']; });
       const bytes = new TextEncoder().encode(JSON.stringify({ testalk: 'diagnóstico', at: new Date().toISOString() }));
       const cid = cidForBytes(bytes);
-      await step('Bulletin: subida', async () => { await uploadArtifact(bytes); return ['yes', cid]; });
-      await step('Bulletin: lectura', async () => {
-        const back = await fetchReceipt(cid, preimageKeyFromCid(cid));
-        if (!back) return ['no', 'no se pudo leer lo recién subido'];
-        return cidForBytes(back) === cid ? ['yes', `${back.length} bytes idénticos`] : ['no', 'los bytes no coinciden'];
+      let key: `0x${string}` | null = null;
+      await step('Bulletin: subida y clave', async () => {
+        key = await uploadArtifact(bytes);
+        return ['yes', `la clave devuelta es el blake2b-256 de los bytes (${key.slice(0, 12)}…) · ${cid}`];
       });
+      if (key) {
+        const k = key;
+        await step('Bulletin: lectura por el host', async () => {
+          const back = await lookupViaHost(k, 20_000);
+          if (!back) return ['no', 'el host no la encontró en 20 s'];
+          return cidForBytes(back) === cid ? ['yes', `${back.length} bytes idénticos`] : ['no', 'los bytes no coinciden'];
+        });
+        await step('Bulletin: lectura por el gateway IPFS', async () => {
+          const back = await viaGateway(cid);
+          // Las docs dicen que las lecturas son solo dentro del contenedor: un "no" aquí es esperable.
+          if (!back) return ['skip', 'el gateway no la sirve: fuera de un contenedor el recibo no se puede leer por CID'];
+          return cidForBytes(back) === cid ? ['yes', `${back.length} bytes idénticos`] : ['no', 'los bytes no coinciden'];
+        });
+      }
     } else if (withBulletin) {
       await step('Bulletin', async () => ['skip', 'solo dentro de Polkadot App con wallet real']);
     }

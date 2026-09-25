@@ -3,8 +3,13 @@ import { isInsideContainerSync, subscribeConnectionStatus } from '@parity/produc
 /** TWR.DOT usa 12s para abrir el canal y 8s para las consultas. */
 export const HOST_CONNECT_MS = 12000;
 export const HOST_QUERY_MS = 8000;
-/** Subir a Bulletin espera inclusión en bloque; no cabe en 8s. */
+/** Firmas y diálogos del wallet: la persona tiene que ir al celular y aprobar. */
 export const HOST_SUBMIT_MS = 90000;
+/**
+ * Subir a Bulletin espera inclusión en bloque. TWR.DOT midió 64 s para 37 bytes
+ * en Polkadot Desktop 0.1.1; un recibo de 15 minutos pesa unos 30 KB.
+ */
+export const HOST_UPLOAD_MS = 180000;
 
 export const TIMED_OUT = Symbol('timed_out');
 

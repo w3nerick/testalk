@@ -9,7 +9,7 @@
 import { blake2b } from '@noble/hashes/blake2b';
 import { CID } from 'multiformats/cid';
 import { create as createDigest } from 'multiformats/hashes/digest';
-import { cryptoWaitReady, signatureVerify } from '@polkadot/util-crypto';
+import { cryptoWaitReady, decodeAddress, encodeAddress, signatureVerify } from '@polkadot/util-crypto';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 
 export type ChainEntry =
@@ -113,6 +113,84 @@ export async function verifySignature(a: Artifact): Promise<SigCheck> {
   } catch (e) {
     return { ok: false, reason: `error al verificar: ${(e as Error).message}` };
   }
+}
+
+/**
+ * Por qué un JSON no es un recibo, o `null` si tiene la forma esperada.
+ * Va antes de mostrar nada: un campo con otro tipo rompía la página.
+ */
+export function artifactShapeError(a: unknown): string | null {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return 'no es un objeto JSON';
+  const r = a as Record<string, unknown>;
+  if (r.v !== 1) return 'versión desconocida (se esperaba "v": 1)';
+  for (const k of ['title', 'started_at', 'ended_at', 'pubkey', 'sig']) {
+    if (typeof r[k] !== 'string') return `falta "${k}" o no es texto`;
+  }
+  for (const k of ['speaker', 'dotns', 'venue', 'window', 'speaker_address', 'genesis', 'sig_alg']) {
+    if (r[k] !== undefined && typeof r[k] !== 'string') return `"${k}" no es texto`;
+  }
+  if (!/^0x[0-9a-f]{64}$/i.test(r.pubkey as string)) return '"pubkey" no es una llave de 32 bytes';
+  if (!Array.isArray(r.chain)) return '"chain" no es una lista';
+  for (const e of r.chain as unknown[]) {
+    const x = e as Record<string, unknown> | null;
+    const sentence = !!x && typeof x.s === 'string';
+    const block = !!x && ['h', 'blk', 'time', 'full'].every(k => typeof x[k] === 'string');
+    if (!sentence && !block) return '"chain" tiene una entrada que no es frase ni bloque';
+  }
+  if (r.audio !== undefined && r.audio !== null) {
+    const au = r.audio as Record<string, unknown>;
+    if (typeof au !== 'object' || typeof au.hash !== 'string' || typeof au.seconds !== 'number' || typeof au.bytes !== 'number') {
+      return '"audio" no tiene la forma { hash, bytes, seconds }';
+    }
+  }
+  return null;
+}
+
+/** Dirección SS58 (prefijo 42) de la llave que firmó. La única que la firma prueba. */
+export function signerAddress(a: Pick<Artifact, 'pubkey'>): string {
+  return encodeAddress(hexToU8a(a.pubkey), 42);
+}
+
+export type IdentityCheck =
+  /** El username es de la llave que firmó, según People chain. */
+  | { status: 'verified'; username: string }
+  /** El recibo no declara username: la firma prueba una llave, no un nombre. */
+  | { status: 'none' }
+  /** El recibo declara una dirección que no es la de la llave que firmó. */
+  | { status: 'address'; claimed: string }
+  /** El username no existe o es de otra cuenta. */
+  | { status: 'mismatch'; username: string; owner: string | null }
+  /** No se pudo consultar People chain: sin comprobar, no falso. */
+  | { status: 'unknown'; username: string; reason: string };
+
+/**
+ * ¿Quién firmó? Compara lo que el recibo declara con lo que la firma prueba.
+ *
+ * `speaker` y `dotns` los escribe la app y cualquiera puede poner otro nombre;
+ * lo único que ata un nombre a la firma es que People chain diga que ese
+ * username pertenece a `pubkey`. `ownerOf` devuelve la llave (hex) dueña del
+ * username, `null` si no existe, o lanza si no se pudo consultar.
+ */
+export async function verifyIdentity(
+  a: Artifact,
+  ownerOf: (username: string) => Promise<string | null>,
+): Promise<IdentityCheck> {
+  const pubkey = a.pubkey.toLowerCase();
+  if (a.speaker_address) {
+    let claimed: string | null = null;
+    try { claimed = u8aToHex(decodeAddress(a.speaker_address)).toLowerCase(); } catch { /* dirección ilegible */ }
+    if (claimed !== pubkey) return { status: 'address', claimed: a.speaker_address };
+  }
+  const username = (a.dotns ?? '').trim();
+  if (!username) return { status: 'none' };
+  let owner: string | null;
+  try {
+    owner = await ownerOf(username);
+  } catch (e) {
+    return { status: 'unknown', username, reason: (e as Error).message };
+  }
+  if (owner && owner.toLowerCase() === pubkey) return { status: 'verified', username };
+  return { status: 'mismatch', username, owner };
 }
 
 export type BlockStatus = 'ok' | 'mismatch' | 'unknown';

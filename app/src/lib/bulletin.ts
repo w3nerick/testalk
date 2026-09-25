@@ -18,8 +18,9 @@ import {
   requestResourceAllocation,
   type HostSubscription,
 } from '@parity/product-sdk-host';
-import { waitForHost, withTimeout, describeError, TIMED_OUT, HOST_QUERY_MS, HOST_SUBMIT_MS } from './host';
+import { waitForHost, withTimeout, describeError, TIMED_OUT, HOST_QUERY_MS, HOST_SUBMIT_MS, HOST_UPLOAD_MS } from './host';
 import { IPFS_GATEWAY } from './network';
+import { blake256Hex } from './artifact';
 
 let access: Promise<void> | null = null;
 
@@ -47,19 +48,33 @@ export function canUseBulletin(): boolean {
   return isInsideContainerSync();
 }
 
-export async function uploadArtifact(bytes: Uint8Array): Promise<void> {
+/**
+ * Sube el recibo y comprueba que la clave que devuelve el host sea el
+ * blake2b-256 de los bytes: es lo que va dentro del CID del QR. Si no
+ * coincidiera, el QR apuntaría a nada y nadie se enteraría.
+ *
+ * `checkFirst`: en un reintento, la subida anterior pudo terminar después del
+ * tope; se busca primero para no subir dos veces.
+ */
+export async function uploadArtifact(bytes: Uint8Array, opts: { checkFirst?: boolean } = {}): Promise<`0x${string}`> {
+  const expected = blake256Hex(bytes).toLowerCase() as `0x${string}`;
   await prepareBulletin();
+  if (opts.checkFirst && (await lookupViaHost(expected, 10_000))) return expected;
   const pm = await withTimeout(getPreimageManager(), HOST_QUERY_MS);
   if (pm === TIMED_OUT || !pm) throw new Error('Bulletin no está disponible en este host.');
-  const r = await withTimeout(pm.submit(bytes), HOST_SUBMIT_MS);
-  if (r === TIMED_OUT) throw new Error('Bulletin no confirmó la subida en 90 s.');
+  const r = await withTimeout(pm.submit(bytes), HOST_UPLOAD_MS);
+  if (r === TIMED_OUT) throw new Error(`Bulletin no confirmó la subida en ${HOST_UPLOAD_MS / 1000} s. Puede terminar sola: Reintentar revisa primero.`);
+  if (typeof r === 'string' && r.toLowerCase() !== expected) {
+    throw new Error(`Bulletin guardó el recibo con otra clave (${r.slice(0, 12)}…, esperada ${expected.slice(0, 12)}…): el QR no lo encontraría.`);
+  }
+  return expected;
 }
 
 /**
  * El host entrega el preimage por una suscripción que reporta `null` hasta
  * encontrarlo (TWR.DOT/chirp). Se ignoran los null y se espera hasta el tope.
  */
-function lookupViaHost(key: `0x${string}`, ms: number): Promise<Uint8Array | null> {
+export function lookupViaHost(key: `0x${string}`, ms: number): Promise<Uint8Array | null> {
   return new Promise(async resolve => {
     const pm = await withTimeout(getPreimageManager(), HOST_QUERY_MS).catch(() => null);
     if (!pm || pm === TIMED_OUT) return resolve(null);
@@ -83,7 +98,7 @@ function lookupViaHost(key: `0x${string}`, ms: number): Promise<Uint8Array | nul
   });
 }
 
-async function viaGateway(cid: string): Promise<Uint8Array | null> {
+export async function viaGateway(cid: string): Promise<Uint8Array | null> {
   try {
     const r = await fetch(`${IPFS_GATEWAY}/${cid}`, { signal: AbortSignal.timeout(20_000) });
     return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
@@ -92,7 +107,10 @@ async function viaGateway(cid: string): Promise<Uint8Array | null> {
   }
 }
 
-/** Lee el recibo: primero por el host, luego por el gateway IPFS del devnet. */
+/**
+ * Lee el recibo: primero por el host, luego por el gateway IPFS del devnet.
+ * Fuera del contenedor solo queda el gateway, que puede no servir preimages.
+ */
 export async function fetchReceipt(cid: string, key: `0x${string}`): Promise<Uint8Array | null> {
   if (isInsideContainerSync() && (await waitForHost())) {
     const b = await lookupViaHost(key, 20_000);

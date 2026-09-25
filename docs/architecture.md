@@ -10,15 +10,17 @@ flowchart LR
         STT -- "ws://localhost:8787<br/>{type: final, text}" --> APP
         STT --> WAV[(grabaciones/*.wav)]
         subgraph Polkadot Desktop
-            APP[testalk.dot<br/>app/]
+            APP[testalk26.dot<br/>app/]
         end
     end
     APP -- "finalizedBlock$" --> AH[(Asset Hub)]
-    APP -- "signRaw" --> PA[Polkadot App<br/>celular]
+    APP -- "firma con la identidad .dot" --> PA[Polkadot App<br/>celular]
+    APP -- "UsernameOwnerOf" --> PE[(People chain)]
     APP -- "preimage submit" --> BU[(Bulletin)]
-    PUB[Público] -- "QR → https://testalk.dot/#/CID" --> VER[Verificador<br/>en Polkadot App]
+    PUB[Público] -- "QR → https://testalk26.dev-dot.li/#/CID" --> VER[Verificador<br/>navegador o Polkadot App]
     VER -- "lookup(CID)" --> BU
     VER -- "hash por altura" --> AH
+    VER -- "¿username de esta llave?" --> PE
 ```
 
 ## Componentes
@@ -49,10 +51,11 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 |---|---|
 | `lib/host.ts` | `waitForHost()` espera el canal `connected` y `withTimeout()` pone tope a toda llamada al host. Sin esto, una llamada encolada nunca resuelve ni lanza error. |
 | `lib/chain.ts` | Cliente de `polkadot-api`: `getHostProvider(genesis)` dentro del contenedor, WebSocket público fuera. Suscripción a bloques finalizados y consulta de hash por altura, con RPC público de respaldo si el cliente ligero del host no sirve consultas históricas. |
-| `lib/signer.ts` | `SignerManager` en el host; cuenta `//Alice` en modo ensayo. |
-| `lib/permissions.ts` | Pide al arrancar el permiso `Remote` para `localhost`, el gateway IPFS y los RPC públicos: en el contenedor la red está detrás de permisos y un dominio no aprobado falla en silencio. |
-| `lib/bulletin.ts` | Cuota y permiso `PreimageSubmit` al empezar la charla; `submit()` al sellar. Lectura con `lookup()` (ignorando los `null` intermedios) y respaldo por el gateway IPFS, comprobando que los bytes correspondan al CID. |
-| `lib/artifact.ts` | Tipos del recibo, bytes canónicos, CID, verificación de firma y de bloques. Es el único módulo que comparten la app y el CLI. |
+| `lib/signer.ts` | Firma con la **identidad `.dot`**: username del host → dueño en People chain → `getLegacyAccountSigner(...).signBytes`, como Proof of Talk. Si el host no lo permite, la cuenta de producto de `SignerManager` (derivada para el dominio, sin username). Cuenta `//Alice` en modo ensayo. |
+| `lib/people.ts` | `Resources.UsernameOwnerOf` en People chain, por el host o por RPC público. Lo usan el presentador (con qué cuenta firmar) y el verificador (si el username es de la llave). |
+| `lib/permissions.ts` | Pide al arrancar el permiso `Remote` para el gateway IPFS y los RPC públicos de Asset Hub y People chain: en el contenedor la red está detrás de permisos y un dominio no aprobado falla en silencio. `localhost` solo lo piden el presentador y el diagnóstico. |
+| `lib/bulletin.ts` | Cuota y permiso `PreimageSubmit` al empezar la charla; `submit()` al sellar, con 180 s de tope, comprobando que la clave devuelta sea el blake2b-256 de los bytes y, en un reintento, buscando antes si ya subió. Lectura con `lookup()` (ignorando los `null` intermedios) y respaldo por el gateway IPFS, comprobando que los bytes correspondan al CID. |
+| `lib/artifact.ts` | Tipos del recibo, validación de forma, bytes canónicos, CID, verificación de firma, de identidad y de bloques. Es el módulo que comparten la app y el CLI. |
 | `lib/stt.ts` | Cliente WebSocket del transcriptor con reconexión y petición de sellado. |
 
 ## Flujo del presentador
@@ -62,8 +65,8 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 3. **Sellado.**
    1. Se pide al transcriptor la huella del WAV (8 s de tope; si no contesta se sella sin audio).
    2. Si quedaron frases sin bloque posterior, se agrega el último bloque finalizado como remache de cierre.
-   3. Se construye el recibo, se calculan los bytes canónicos y se firman.
-   4. Se sube a Bulletin y se genera el QR. Si la subida falla, la firma se conserva: se reintenta solo la subida, o se sigue sin Bulletin con el JSON descargable.
+   3. Se construye el recibo, se calculan los bytes canónicos y se firman con la identidad `.dot`. Si el host no lo permite, la pantalla ofrece firmar con la cuenta de la app; ese recibo lleva `dotns` vacío y el verificador lo muestra sin identidad.
+   4. Se sube a Bulletin y se genera el QR hacia el gateway web. Si la subida falla, la firma se conserva: se reintenta solo la subida (buscando antes si ya había subido), o se sigue sin Bulletin con el JSON descargable o copiable.
 4. **Recuperación.** El `chain` se guarda en `localStorage` en cada cambio. Si la página se recarga antes de sellar, la preparación ofrece recuperar la charla.
 
 ## Decisiones
@@ -71,8 +74,9 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | Decisión | Por qué |
 |---|---|
 | Bloques finalizados en vez de `best` | Un bloque best puede quedar huérfano en un reorg; su hash dejaría de existir y el verificador marcaría el recibo como falso. Finalizar tarda unos segundos más en Asset Hub. |
-| `SignerManager` en vez de `getLegacyAccountSigner` | En el Products Devnet el signer del accounts provider no abre la hoja de firma y la llamada se queda colgada. |
-| QR con `https://testalk.dot/...` | Es el único deep link que el host enruta dentro del contenedor. Esquemas propios o gateways web abren fuera y ahí no hay host. |
+| Firmar con la identidad `.dot`, no con `SignerManager` | `SignerManager` solo entrega la cuenta de producto que el host deriva para el dominio ("never the user's identity account", código del SDK): nadie puede ligarla a un username. La cuenta dueña del username en People chain sí se puede comprobar. La de producto queda de respaldo. Ver la [revisión](platform-review-2026-09-25.md#h2-la-firma-sale-de-una-cuenta-de-producto-no-de-la-identidad-del-speaker). |
+| QR con `https://testalk26.dev-dot.li/#/<cid>` | La cámara del teléfono no resuelve `.dot`, y buena parte del público no tendrá Polkadot App. El gateway abre en cualquier navegador y es un contenedor con puente al host: lee Bulletin, y verificar no necesita firmar. En Polkadot App sirve también `testalk26.dot/#/<cid>`. |
+| Dominio de 9 letras | Los nombres de 6 a 8 exigen Full Personhood y el registro falla después del commit. El dominio vive en `lib/network.ts`, `package.json` y `polkadot-app-deploy.config.ts`. |
 | Transcriptor en Python y no en el navegador | Rendimiento de Whisper y garantía de grabación. Coincide con la arquitectura probada en escenario por Proof of Talk. |
 | Formato v1 intacto y campos nuevos aparte | Compatibilidad con los verificadores de Proof of Talk. Los campos nuevos quedan cubiertos por la firma. |
 | Fuentes e íconos dentro del bundle | El contenedor no garantiza acceso a CDNs; la fuente de íconos completa pesaría varios MB en Bulletin, así que solo se importan los SVG usados. |

@@ -2,21 +2,29 @@ import { icon } from '../lib/icons';
 import { ASSET_HUB_GENESIS, hashAtHeight, withReadClient } from '../lib/chain';
 import { readSeal } from '../lib/registry';
 import {
+  artifactShapeError,
   cidForBytes,
   preimageKeyFromCid,
+  signerAddress,
   verifyBlocks,
+  verifyIdentity,
   verifySignature,
   type Artifact,
   type BlocksCheck,
+  type IdentityCheck,
   type SigCheck,
 } from '../lib/artifact';
 import QRCode from 'qrcode';
 import { blake2b } from '@noble/hashes/blake2b';
 import { u8aToHex } from '@polkadot/util';
+import { isInsideContainerSync } from '@parity/product-sdk-host';
+import { encodeAddress } from '@polkadot/util-crypto';
+import { hexToU8a } from '@polkadot/util';
 import { fetchReceipt } from '../lib/bulletin';
-import { APP_DOTNS } from '../lib/signer';
+import { usernameOwner } from '../lib/people';
+import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
 import { asciiBar, asciiStamp } from '../lib/ascii';
-import { esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup, type Tone } from '../ui';
+import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup, type Tone } from '../ui';
 
 let local: { artifact: Artifact; cid: string } | null = null;
 
@@ -41,12 +49,20 @@ export function renderVerifier(root: HTMLElement, cid?: string): Cleanup {
       fetchReceipt(cid, key)
         .then(bytes => {
           if (dead) return;
-          if (!bytes) return failed(root, 'No se encontró el recibo en Bulletin. Puede haber expirado (Bulletin guarda 14 días).');
+          if (!bytes) {
+            // Bulletin solo se lee de forma fiable dentro de un contenedor (docs de PCF, "Storage").
+            return isInsideContainerSync()
+              ? failed(root, 'No se encontró el recibo en Bulletin. Puede haber expirado (Bulletin guarda 14 días).')
+              : failed(root, 'Este navegador no pudo leer Bulletin directamente.',
+                  `<a class="btn primary" href="${esc(`${WEB_GATEWAY}/#/${cid}`)}">${icon('arrowRight')}Abrir en ${esc(new URL(WEB_GATEWAY).host)}</a>`);
+          }
           // El gateway no es de confianza: los bytes deben ser exactamente los del CID.
           if (cidForBytes(bytes) !== cid) return failed(root, 'Los datos recibidos no corresponden a este CID.');
-          let a: Artifact;
+          let a: unknown;
           try { a = JSON.parse(new TextDecoder().decode(bytes)); } catch { return failed(root, 'El recibo no es JSON válido.'); }
-          show(root, a, cid, true, bytes);
+          const bad = artifactShapeError(a);
+          if (bad) return failed(root, `No es un recibo de testalk: ${bad}.`);
+          show(root, a as Artifact, cid, true, bytes);
         })
         .catch(e => !dead && failed(root, (e as Error).message));
     }
@@ -69,7 +85,7 @@ function loading(root: HTMLElement) {
     </main>`;
 }
 
-function failed(root: HTMLElement, msg: string) {
+function failed(root: HTMLElement, msg: string, action = '') {
   root.innerHTML = `${topbar()}
     <main class="shell verify">
       <section class="card verdict bad">
@@ -77,7 +93,7 @@ function failed(root: HTMLElement, msg: string) {
         <h1>No se pudo abrir el recibo</h1>
         <p class="title">${esc(msg)}</p>
       </section>
-      <a class="btn" href="#/verificar">${icon('fileArrowUp')}Verificar un archivo</a>
+      <div class="actions">${action}<a class="btn" href="#/verificar">${icon('fileArrowUp')}Verificar un archivo</a></div>
     </main>`;
 }
 
@@ -86,7 +102,7 @@ function picker(root: HTMLElement) {
     <main class="shell verify">
       <section class="intro">
         <h1>Verificar un recibo</h1>
-        <p class="lead">Escanea el QR de una charla con Polkadot App, o sube aquí el archivo JSON.</p>
+        <p class="lead">Escanea el QR de una charla con la cámara, o sube aquí el archivo JSON.</p>
       </section>
       <label class="drop" id="drop">
         <span class="drop-art" aria-hidden="true">[ recibo.json ]</span>
@@ -107,12 +123,18 @@ function picker(root: HTMLElement) {
   const drop = root.querySelector<HTMLElement>('#drop')!;
   const err = root.querySelector<HTMLElement>('#err')!;
   const read = async (f: File) => {
+    const say = (m: string) => { err.innerHTML = `<div class="error-box">${icon('warningCircle')}${esc(m)}</div>`; };
+    let bytes: Uint8Array;
+    let a: unknown;
     try {
-      const bytes = new Uint8Array(await f.arrayBuffer());
-      show(root, JSON.parse(new TextDecoder().decode(bytes)), cidForBytes(bytes), false, bytes);
+      bytes = new Uint8Array(await f.arrayBuffer());
+      a = JSON.parse(new TextDecoder().decode(bytes));
     } catch {
-      err.innerHTML = `<div class="error-box">${icon('warningCircle')}Ese archivo no es un recibo válido.</div>`;
+      return say('Ese archivo no es JSON.');
     }
+    const bad = artifactShapeError(a);
+    if (bad) return say(`No es un recibo de testalk: ${bad}.`);
+    show(root, a as Artifact, cidForBytes(bytes), false, bytes);
   };
   root.querySelector<HTMLInputElement>('#file')!.addEventListener('change', e => {
     const f = (e.target as HTMLInputElement).files?.[0];
@@ -150,7 +172,10 @@ function setRow(root: HTMLElement, id: string, html: string) {
 function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean, bytes?: Uint8Array) {
   const dur = Date.parse(a.ended_at) - Date.parse(a.started_at);
   const rehearsal = (a as { rehearsal?: boolean }).rehearsal === true;
-  const who = a.dotns || a.speaker || shortAddr(a.speaker_address ?? a.pubkey);
+  // Lo único que la firma prueba es la llave. El nombre lo declara el recibo
+  // hasta que People chain confirme que es de esa llave.
+  const addr = signerAddress(a);
+  const who = a.dotns || a.speaker || shortAddr(addr);
 
   root.innerHTML = `${topbar()}
     <main class="shell verify">
@@ -160,7 +185,7 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
         <h1 id="headline">Verificando<i class="aspin"></i></h1>
         <p class="title">${esc(a.title)}</p>
         <div class="meta">
-          <div><span>Speaker</span><b>${esc(who)}</b></div>
+          <div><span>Speaker</span><b id="who">${esc(who)}</b><small id="who-note">${!a.dotns && who === shortAddr(addr) ? 'la llave que firmó' : 'declarado'}</small></div>
           <div><span>Evento</span><b>${esc(a.venue || 'Sin especificar')}</b></div>
           <div><span>Fecha</span><b>${new Date(a.started_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</b><small class="mono">${esc(a.window || '')}</small></div>
           <div><span>Duración</span><b class="mono">${Number.isFinite(dur) ? fmtDuration(dur) : 'n/d'}</b></div>
@@ -168,6 +193,7 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
       </section>
       <section class="card checks" id="checks">
         ${row('sig', 'wait', 'Firma', 'Comprobando…')}
+        ${row('id', 'wait', 'Identidad', 'Consultando People chain…')}
         ${row('blocks', 'wait', 'Bloques en la cadena', 'Esperando…')}
         ${row('seal', 'wait', 'Sello permanente', 'Consultando el registro en Asset Hub…')}
         ${audioRow(a)}
@@ -183,9 +209,10 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
             .join('')}
         </ol>
       </section>
-      ${limits(a)}
+      ${limits(a, addr)}
       <div class="actions">
         <button class="btn" id="dl">${icon('downloadSimple')}Descargar recibo</button>
+        <button class="btn" id="cj">${icon('copy')}Copiar JSON</button>
         ${fromBulletin ? `<button class="btn" id="qr-btn">${icon('qrCode')}QR</button>
         <button class="btn" id="cp">${icon('copy')}Copiar enlace</button>` : ''}
         <a class="btn ghost" href="#/verificar" id="other">${icon('fileArrowUp')}Otro recibo</a>
@@ -194,9 +221,12 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
       <p class="faint mono" style="font-size:12px;word-break:break-all;margin:0">CID ${esc(cid)}</p>
     </main>`;
 
-  const link = `https://${APP_DOTNS}/#/${cid}`;
-  root.querySelector('#dl')!.addEventListener('click', () => download(bytes ?? new TextEncoder().encode(JSON.stringify(a)), cid));
-  root.querySelector('#cp')?.addEventListener('click', () => navigator.clipboard?.writeText(link).then(() => toast('Enlace copiado'), () => toast(link)));
+  // El gateway abre en cualquier navegador; en Polkadot App también sirve `${APP_DOTNS}/#/<cid>`.
+  const link = `${WEB_GATEWAY}/#/${cid}`;
+  const raw = bytes ?? new TextEncoder().encode(JSON.stringify(a));
+  root.querySelector('#dl')!.addEventListener('click', () => download(raw, cid));
+  root.querySelector('#cj')!.addEventListener('click', () => copyText(new TextDecoder().decode(raw), 'JSON copiado'));
+  root.querySelector('#cp')?.addEventListener('click', () => copyText(link, 'Enlace copiado'));
   root.querySelector('#qr-btn')?.addEventListener('click', () => toggleQr(root.querySelector<HTMLElement>('#share')!, link));
   root.querySelector('#other')!.addEventListener('click', ev => {
     // Si ya estamos en #/verificar el hash no cambia y no habría re-render.
@@ -206,7 +236,7 @@ function show(root: HTMLElement, a: Artifact, cid: string, fromBulletin: boolean
     else location.hash = '#/verificar';
   });
 
-  run(root, a);
+  run(root, a, addr);
   sealRow(root, a, cid);
   bindAudio(root, a);
 }
@@ -232,7 +262,7 @@ async function toggleQr(box: HTMLElement, link: string) {
 }
 
 /** Lo que el recibo prueba y lo que no: sin esto el ✓ verde promete de más. */
-function limits(a: Artifact): string {
+function limits(a: Artifact, addr: string): string {
   return `
     <details class="card limits">
       <summary>¿Qué prueba este recibo?<span class="mono" aria-hidden="true"></span></summary>
@@ -240,7 +270,8 @@ function limits(a: Artifact): string {
         <div>
         <h3>Prueba</h3>
         <ul class="yes">
-          <li>La llave <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span> firmó exactamente este texto.</li>
+          <li>La llave <span class="mono">${esc(shortAddr(addr))}</span> firmó exactamente este texto.</li>
+          ${a.dotns ? `<li>Si la fila de identidad sale en verde, esa llave es la dueña de <b>${esc(a.dotns)}</b> en People chain.</li>` : ''}
           <li>El texto no pudo escribirse antes del bloque #${esc(firstBlk(a))}: su hash no se conocía.</li>
           <li>Existía a más tardar cuando se subió a Bulletin o se selló en Asset Hub.</li>
           ${a.audio ? '<li>Si el speaker comparte el audio, se puede comprobar que es la misma grabación.</li>' : ''}
@@ -251,6 +282,7 @@ function limits(a: Artifact): string {
         <ul class="no">
           <li>Que lo dicho sea cierto. Prueba quién lo dijo, no si tiene razón.</li>
           <li>Que la voz sea de esa persona: el recibo guarda texto, no la voz.</li>
+          <li>El nombre, si People chain no lo confirma: cualquiera puede escribir otro nombre en un recibo.</li>
           <li>Que la llave sea de un humano único (eso lo daría Individuality).</li>
         </ul>
         </div>
@@ -318,10 +350,25 @@ function bindAudio(root: HTMLElement, a: Artifact) {
   });
 }
 
-async function run(root: HTMLElement, a: Artifact) {
+async function run(root: HTMLElement, a: Artifact, addr: string) {
+  const idP = verifyIdentity(a, usernameOwner).then(id => {
+    setRow(root, 'id', identityRow(id, addr));
+    const note = root.querySelector('#who-note');
+    if (id.status === 'verified') {
+      root.querySelector('#who')!.textContent = id.username;
+      if (note) note.textContent = 'verificado en People chain';
+    } else if (note && (id.status === 'address' || id.status === 'mismatch')) {
+      note.textContent = 'no coincide con la firma';
+      note.classList.add('bad');
+    } else if (note && id.status === 'unknown') {
+      note.textContent = 'declarado, sin comprobar';
+    }
+    return id;
+  });
+
   const sig: SigCheck = await verifySignature(a);
   setRow(root, 'sig', sig.ok
-    ? row('sig', 'ok', 'Firma válida', `sr25519 de <span class="mono">${esc(shortAddr(a.speaker_address ?? a.pubkey))}</span>. Nadie cambió una sola letra desde que se firmó.`)
+    ? row('sig', 'ok', 'Firma válida', `sr25519 de <span class="mono">${esc(shortAddr(addr))}</span>. Nadie cambió una sola letra desde que se firmó.`)
     : row('sig', 'bad', 'Firma inválida', esc(capitalize(sig.reason ?? 'la firma no corresponde.'))));
 
   const blocksCount = a.chain.filter(e => 'full' in e).length;
@@ -343,18 +390,43 @@ async function run(root: HTMLElement, a: Artifact) {
           ? row('blocks', 'warn', 'Anclaje parcial', `${blocks.matched} bloques confirmados, ${blocks.unknown} sin respuesta de la red.`)
           : row('blocks', 'warn', 'Bloques sin comprobar', esc(blocks.reason ?? 'No se pudieron consultar.')));
 
-  const ok = sig.ok && blocks.status !== 'fail';
+  const id = await idP;
+  // Un recibo que dice ser de otra cuenta no es una charla verificada, aunque la firma valga.
+  const idBad = id.status === 'address' || id.status === 'mismatch';
+  const ok = sig.ok && blocks.status !== 'fail' && !idBad;
   const v = root.querySelector<HTMLElement>('#verdict')!;
   v.classList.remove('pending');
   v.classList.add(ok ? 'ok' : 'bad');
-  const headline = ok ? 'Charla verificada' : sig.ok ? 'Anclaje falso' : 'Recibo alterado';
+  const headline = ok ? 'Charla verificada' : !sig.ok ? 'Recibo alterado' : idBad ? 'Identidad falsa' : 'Anclaje falso';
   const stamp = root.querySelector<HTMLElement>('#stamp')!;
   stamp.className = `stamp ${ok ? 'ok' : 'bad'}`;
   stamp.textContent = asciiStamp([
     headline.toUpperCase(),
-    ok ? `sr25519 + ${blocks.matched}/${blocksCount} bloques` : sig.ok ? 'bloques inventados' : 'firma inválida',
+    ok
+      ? id.status === 'verified' ? `firmada por ${id.username}`
+        : id.status === 'unknown' ? 'identidad sin comprobar'
+        : `sr25519 + ${blocks.matched}/${blocksCount} bloques`
+      : !sig.ok ? 'firma inválida' : idBad ? 'firmó otra cuenta' : 'bloques inventados',
   ]);
   root.querySelector('#headline')!.textContent = headline;
+}
+
+function identityRow(id: IdentityCheck, addr: string): string {
+  const key = `<span class="mono">${esc(shortAddr(addr))}</span>`;
+  switch (id.status) {
+    case 'verified':
+      return row('id', 'ok', 'Identidad verificada', `La llave que firmó es la dueña de <b>${esc(id.username)}</b> en People chain.`);
+    case 'none':
+      return row('id', 'warn', 'Sin identidad comprobable', `El recibo no declara un username: la firma prueba la llave ${key}, no un nombre.`);
+    case 'address':
+      return row('id', 'bad', 'Dirección falsa', `El recibo dice que firmó <span class="mono">${esc(shortAddr(id.claimed))}</span>, pero la firma es de ${key}.`);
+    case 'mismatch':
+      return row('id', 'bad', 'Identidad falsa', id.owner
+        ? `El recibo dice ser <b>${esc(id.username)}</b>, pero ese username es de <span class="mono">${esc(shortAddr(encodeAddress(hexToU8a(id.owner), 42)))}</span>, no de la llave que firmó (${key}).`
+        : `El recibo dice ser <b>${esc(id.username)}</b>, pero ese username no existe en People chain.`);
+    case 'unknown':
+      return row('id', 'warn', 'Identidad sin comprobar', `No se pudo consultar People chain: el recibo dice ser <b>${esc(id.username)}</b>, sin confirmar.`);
+  }
 }
 
 function capitalize(s: string): string {

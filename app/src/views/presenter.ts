@@ -2,10 +2,12 @@ import QRCode from 'qrcode';
 import { icon } from '../lib/icons';
 import { ASSET_HUB_GENESIS, NETWORK, subscribeFinalized, type Block } from '../lib/chain';
 import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type AudioSeal, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
-import { connectSpeaker, currentSpeaker, signBytes, APP_DOTNS } from '../lib/signer';
+import { connectSpeaker, currentSpeaker, identityUnavailableReason, signBytes, useAppAccount, type Speaker } from '../lib/signer';
 import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
+import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
+import { requestHostPermissions } from '../lib/permissions';
 import { sealAudio, startStt, stopStt, type SttStatus } from '../lib/stt';
-import { esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
+import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
 import { setLocalArtifact } from './verifier';
 
 const DRAFT_KEY = 'testalk-draft';
@@ -44,6 +46,9 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let signed: { artifact: Artifact; bytes: Uint8Array; cid: string } | null = null;
   // La huella se pide una vez: después el transcriptor queda desconectado.
   let audioSeal: AudioSeal | null | undefined;
+
+  // El transcriptor corre en localhost: ese permiso se pide aquí y no al arrancar.
+  requestHostPermissions({ localhost: true });
 
   // El transcriptor se conecta desde la pantalla de preparación: así se ve si
   // está vivo antes de empezar.
@@ -119,8 +124,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const drawWallet = (s = currentSpeaker()) => {
       walletRow.className = `check-row ${s ? 'ok' : ''}`;
       walletRow.innerHTML = s
-        ? `${tag('ok')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
-             <div class="muted mono" style="font-size:12.5px">${s.rehearsal ? 'Ensayo: cuenta de prueba, fuera de Polkadot App' : esc(shortAddr(s.address))}</div></div>`
+        ? `${tag(s.kind === 'app' ? 'warn' : 'ok')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
+             <div class="muted" style="font-size:13px">${signerNote(s)}</div></div>`
         : `${tag('idle')}<div class="grow">Wallet del speaker<div class="muted" style="font-size:13px">Firma el recibo al final</div></div>
            <button class="btn sm primary" id="connect">Conectar</button>`;
       start.disabled = !s;
@@ -315,7 +320,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const steps = [
       ['waveform', 'Cerrando la grabación'],
       ['signature', 'Firma en tu celular'],
-      ['fileArrowUp', bulletin ? 'Subiendo a Bulletin (hasta 1 min)' : 'Preparando el recibo'],
+      ['fileArrowUp', bulletin ? 'Subiendo a Bulletin (1 a 3 min)' : 'Preparando el recibo'],
     ] as const;
     const draw = (at: number, error?: string) => {
       box.innerHTML = `
@@ -325,8 +330,14 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         </div>
         ${error ? `<div class="error-box" style="margin-top:14px">${icon('warningCircle')}${esc(error)}</div>
           <button class="btn primary block" id="retry" style="margin-top:12px">${signed ? 'Reintentar subida' : 'Reintentar'}</button>
+          ${!signed && at === 1 && currentSpeaker()?.kind === 'identity' ? `<button class="btn ghost block" id="as-app" style="margin-top:8px">${icon('signature')}Firmar con la cuenta de la app</button>` : ''}
           ${signed ? `<button class="btn ghost block" id="skip" style="margin-top:8px">${icon('downloadSimple')}Seguir sin Bulletin</button>` : ''}` : ''}`;
       box.querySelector('#retry')?.addEventListener('click', () => seal(box));
+      box.querySelector('#as-app')?.addEventListener('click', () => {
+        // Respaldo: el recibo no quedará ligado al username, y lo dirá.
+        useAppAccount();
+        seal(box);
+      });
       box.querySelector('#skip')?.addEventListener('click', () => {
         clearDraft();
         setLocalArtifact(signed!.artifact, signed!.cid);
@@ -351,10 +362,13 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       const endedAt = new Date().toISOString();
       const started = draft.startedAt ?? endedAt;
       const hm = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
+      // `dotns` solo lleva el username cuando firma su dueño: es lo que el verificador
+      // comprueba en People chain. Con la cuenta de la app el nombre queda como texto.
+      const who = currentSpeaker()!;
       const unsigned: UnsignedArtifact & { rehearsal?: true } = {
         v: 1,
-        speaker: sp.username ?? shortAddr(sp.address),
-        dotns: sp.username ?? '',
+        speaker: who.username ?? shortAddr(who.address),
+        dotns: who.kind === 'identity' && who.username ? who.username : '',
         title: draft.title,
         venue: draft.venue,
         started_at: started,
@@ -367,12 +381,12 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         network: NETWORK,
         genesis: ASSET_HUB_GENESIS,
         lang: draft.lang,
-        speaker_address: sp.address,
+        speaker_address: who.address,
         audio,
-        ...(sp.rehearsal ? { rehearsal: true as const } : {}),
+        ...(who.rehearsal ? { rehearsal: true as const } : {}),
       };
       const sig = await signBytes(canonicalBytes(unsigned as unknown as Record<string, unknown>));
-      const artifact: Artifact = { ...unsigned, pubkey: sp.pubkey, sig, sig_alg: 'sr25519' };
+      const artifact: Artifact = { ...unsigned, pubkey: who.pubkey, sig, sig_alg: 'sr25519' };
       const bytes = new TextEncoder().encode(JSON.stringify(artifact));
       signed = { artifact, bytes, cid: cidForBytes(bytes) };
       saveDraft(draft);
@@ -382,11 +396,12 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     }
   }
 
+  let uploadTries = 0;
   async function upload(box: HTMLElement, draw: (at: number, error?: string) => void, bulletin: boolean) {
     const { artifact, bytes, cid } = signed!;
     draw(2);
     try {
-      if (bulletin) await uploadArtifact(bytes);
+      if (bulletin) await uploadArtifact(bytes, { checkFirst: uploadTries++ > 0 });
     } catch (e) {
       return draw(2, `La charla está firmada, pero no se subió: ${(e as Error).message}`);
     }
@@ -396,29 +411,42 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   }
 
   async function sealed(box: HTMLElement, artifact: Artifact, cid: string, onBulletin: boolean) {
-    const url = `https://${APP_DOTNS}/#/${cid}`;
+    // El gateway abre en cualquier navegador: la cámara del teléfono no resuelve `.dot`.
+    const url = `${WEB_GATEWAY}/#/${cid}`;
     const qr = await QRCode.toDataURL(url, { margin: 1, width: 720, errorCorrectionLevel: 'M', color: { dark: '#0d0d10', light: '#ffffff' } });
     box.innerHTML = `
       <div class="sealed">
         <span class="pill on">${icon('sealCheck')}Charla sellada</span>
         ${onBulletin
           ? `<div class="qr"><img src="${qr}" alt="QR para verificar esta charla" /></div>
-             <p class="muted" style="margin:0;font-size:14px">Escanéalo con Polkadot App para verificar.</p>`
+             <p class="muted" style="margin:0;font-size:14px">Escanéalo con la cámara del teléfono. En Polkadot App: <span class="mono">${esc(APP_DOTNS)}/#/…</span></p>`
           : `<p class="muted" style="margin:0;font-size:14px">Ensayo: el recibo no se subió a Bulletin. Descárgalo o ábrelo en el verificador.</p>`}
         <div class="cid">${esc(cid)}</div>
         <div class="actions" style="justify-content:center">
           <a class="btn sm" href="#/verificar">${icon('shieldCheck')}Verificar</a>
           <button class="btn sm" id="dl">${icon('downloadSimple')}JSON</button>
+          <button class="btn sm" id="cj">${icon('copy')}Copiar JSON</button>
           ${onBulletin ? `<button class="btn sm" id="cp">${icon('copy')}Enlace</button>` : ''}
         </div>
       </div>`;
     box.querySelector('#dl')!.addEventListener('click', () => downloadJson(artifact, cid));
-    box.querySelector('#cp')?.addEventListener('click', () => navigator.clipboard?.writeText(url).then(() => toast('Enlace copiado'), () => toast(url)));
+    // Respaldo de la descarga: en el celular un <a download> puede no hacer nada.
+    box.querySelector('#cj')!.addEventListener('click', () => copyText(JSON.stringify(artifact), 'JSON copiado'));
+    box.querySelector('#cp')?.addEventListener('click', () => copyText(url, 'Enlace copiado'));
   }
 
   setup();
   return () => cleanups.forEach(f => { try { f(); } catch { /* ya cerrado */ } });
 }
+
+/** Con qué llave se va a firmar, dicho sin rodeos: es lo que el verificador podrá comprobar. */
+function signerNote(s: Speaker): string {
+  if (s.kind === 'rehearsal') return 'Ensayo: cuenta de prueba, fuera de Polkadot App';
+  if (s.kind === 'identity') return `Firmarás con tu identidad .dot · <span class="mono">${esc(shortAddr(s.address))}</span>`;
+  const why = identityUnavailableReason();
+  return `Firmarás con la cuenta de ${esc(APP_DOTNS)}: el recibo no quedará ligado a tu username${why ? ` (${esc(why)})` : ''}`;
+}
+
 
 export function downloadJson(a: Artifact, cid: string) {
   // Compacto a propósito: son los mismos bytes que se subieron, así el CID del archivo coincide.

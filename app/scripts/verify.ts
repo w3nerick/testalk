@@ -4,15 +4,27 @@
  *   npm run verify -- ../examples/rehearsal.json
  *   npm run verify -- bafk2bza…            (lee el recibo del gateway IPFS del devnet)
  *
- * Comprueba la firma sr25519 y consulta cada block hash en Asset Hub por RPC
- * público. Sale con código 0 si el recibo es válido y 1 si no.
+ * Comprueba la firma sr25519, que el username declarado sea dueño de la llave
+ * en People chain y cada block hash en Asset Hub, por RPC público. Sale con
+ * código 0 si el recibo es válido y 1 si no.
  */
 import { readFileSync } from 'node:fs';
 import { createClient } from 'polkadot-api';
 import { getWsProvider } from 'polkadot-api/ws';
-import { blake256Hex, cidForBytes, verifyBlocks, verifySignature, type Artifact } from '../src/lib/artifact.ts';
+import { decodeAddress, encodeAddress } from '@polkadot/util-crypto';
+import { hexToU8a, u8aToHex } from '@polkadot/util';
+import {
+  artifactShapeError,
+  blake256Hex,
+  cidForBytes,
+  signerAddress,
+  verifyBlocks,
+  verifyIdentity,
+  verifySignature,
+  type Artifact,
+} from '../src/lib/artifact.ts';
 import { readSeal } from '../src/lib/registry.ts';
-import { ASSET_HUB_GENESIS, IPFS_GATEWAY, PUBLIC_WS } from '../src/lib/network.ts';
+import { ASSET_HUB_GENESIS, IPFS_GATEWAY, PEOPLE_WS, PUBLIC_WS } from '../src/lib/network.ts';
 
 const c = {
   ok: (s: string) => `\x1b[32m${s}\x1b[0m`,
@@ -39,17 +51,43 @@ async function main() {
   }
 
   const bytes = await load(arg);
-  const a = JSON.parse(new TextDecoder().decode(bytes)) as Artifact;
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  const bad = artifactShapeError(parsed);
+  if (bad) {
+    console.error(c.bad(`No es un recibo de testalk: ${bad}`));
+    process.exit(1);
+  }
+  const a = parsed as Artifact;
   const blocks = a.chain.filter(e => 'full' in e).length;
+  const addr = signerAddress(a);
 
   console.log(`\n${c.bold(a.title)}`);
-  console.log(c.dim(`${a.speaker || a.speaker_address} · ${a.venue || 'sin evento'} · ${a.window}`));
+  console.log(c.dim(`${a.speaker || addr} (declarado) · ${a.venue || 'sin evento'} · ${a.window}`));
   console.log(c.dim(`CID ${cidForBytes(bytes)}`));
   if ((a as { rehearsal?: boolean }).rehearsal) console.log(c.warn('Recibo de ensayo (cuenta de prueba)'));
   console.log();
 
   const sig = await verifySignature(a);
-  console.log(sig.ok ? c.ok('✓ Firma válida') : c.bad(`✗ Firma inválida: ${sig.reason}`), c.dim(`(${sig.crypto ?? '?'}, ${a.pubkey.slice(0, 10)}…)`));
+  console.log(sig.ok ? c.ok('✓ Firma válida') : c.bad(`✗ Firma inválida: ${sig.reason}`), c.dim(`(${sig.crypto ?? '?'}, ${addr})`));
+
+  // Identidad: lo que el recibo declara contra lo que la firma prueba.
+  const people = createClient(getWsProvider(PEOPLE_WS));
+  const ownerOf = async (username: string) => {
+    const q = people.getUnsafeApi().query.Resources.UsernameOwnerOf.getValue(new TextEncoder().encode(username)) as Promise<string | undefined>;
+    const r = await Promise.race([q, new Promise<'timeout'>(res => setTimeout(() => res('timeout'), 15_000))]);
+    if (r === 'timeout') throw new Error('People chain no respondió');
+    return r ? u8aToHex(decodeAddress(r)) : null;
+  };
+  const id = await verifyIdentity(a, ownerOf);
+  people.destroy();
+  if (id.status === 'verified') console.log(c.ok(`✓ Identidad: la llave es la dueña de ${id.username} en People chain`));
+  else if (id.status === 'none') console.log(c.warn('! Sin identidad comprobable: el recibo no declara username'));
+  else if (id.status === 'address') console.log(c.bad(`✗ Dirección falsa: el recibo dice ${id.claimed}, la firma es de ${addr}`));
+  else if (id.status === 'mismatch') {
+    console.log(c.bad(id.owner
+      ? `✗ Identidad falsa: ${id.username} es de ${encodeAddress(hexToU8a(id.owner), 42)}, no de ${addr}`
+      : `✗ Identidad falsa: ${id.username} no existe en People chain`));
+  } else console.log(c.warn(`! Identidad sin comprobar: ${id.reason}`));
 
   const client = createClient(getWsProvider(PUBLIC_WS));
   // Sin red, una consulta pendiente nunca resuelve: tope de 10 s y cuenta como "sin respuesta".
@@ -79,8 +117,10 @@ async function main() {
   else console.log(c.dim('· Registro permanente sin consultar'));
   console.log(a.audio ? c.ok(`✓ Huella del audio ${a.audio.hash.slice(0, 18)}… (${a.audio.seconds} s)`) : c.dim('· Sin huella de audio'));
 
-  const valid = sig.ok && b.status !== 'fail';
-  console.log(`\n${valid ? c.ok(c.bold('CHARLA VERIFICADA')) : c.bad(c.bold('RECIBO NO VÁLIDO'))}\n`);
+  const idBad = id.status === 'address' || id.status === 'mismatch';
+  const valid = sig.ok && b.status !== 'fail' && !idBad;
+  const verdict = valid ? 'CHARLA VERIFICADA' : sig.ok && idBad ? 'IDENTIDAD FALSA' : 'RECIBO NO VÁLIDO';
+  console.log(`\n${valid ? c.ok(c.bold(verdict)) : c.bad(c.bold(verdict))}\n`);
   process.exit(valid ? 0 : 1);
 }
 

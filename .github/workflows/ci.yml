@@ -27,6 +27,11 @@ jobs:
           if npm run verify -- ../examples/tampered-uanl.json; then
             echo "El recibo alterado pasó la verificación"; exit 1
           fi
+      - name: Rechazar suplantación de identidad
+        run: |
+          if npm run verify -- ../examples/impersonated-uanl.json; then
+            echo "El recibo que dice ser de otra cuenta pasó la verificación"; exit 1
+          fi
 
   stt:
     runs-on: ubuntu-latest

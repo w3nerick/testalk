@@ -173,7 +173,8 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         try {
           ws = new WebSocket(STT_URL);
           ws.onopen = () => { clearTimeout(t); ws.close(); resolve(['yes', `${STT_URL} abierto`]); };
-          ws.onerror = () => { clearTimeout(t); resolve(['no', 'no conecta: ¿está corriendo stt/testalk_stt.py? Dentro del contenedor también puede ser un bloqueo de red']); };
+          // Opcional: sin el transcriptor de Python la app transcribe con su propio micrófono.
+          ws.onerror = () => { clearTimeout(t); resolve(['skip', 'no conecta. Es opcional: solo hace falta si usas stt/testalk_stt.py (si lo estás corriendo, puede ser un bloqueo de red del contenedor)']); };
         } catch (e) {
           clearTimeout(t);
           resolve(['no', String(e)]);

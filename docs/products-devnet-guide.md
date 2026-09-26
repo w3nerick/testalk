@@ -1,7 +1,7 @@
 # Guía: publicar una app en Polkadot Products Devnet
 
 Para estudiantes que van a publicar su primera app `.dot`. Cada paso está
-comprobado publicando **testalk** el 25 de septiembre de 2026 con `pad` 0.16.7,
+comprobado publicando **testalk** el 25 y 26 de septiembre de 2026 con `pad` 0.16.7,
 y los errores que aparecen aquí son los que salieron de verdad.
 
 Si solo quieres los comandos, ve al [resumen](#resumen-en-8-comandos). Si algo
@@ -281,6 +281,44 @@ dotns content view devnet-test-talk26 --env devnet    # debe mostrar el CID nuev
 Para aparecer en Browse agrega `--publish` al comando; eso sí pide proof of
 personhood.
 
+### Comprobar que todo quedó on-chain, y hasta cuándo
+
+Que la app abra no prueba que todo esté en Bulletin, ni cuánto tiempo va a
+seguir ahí. testalk trae un script que lo mide en la cadena
+([`app/scripts/check-deploy.ts`](../app/scripts/check-deploy.ts); cópialo a tu
+app y cambia el nombre en `network.ts`):
+
+```bash
+npm run check-deploy
+```
+
+Salida real después de la sexta publicación de testalk (26 sep 2026):
+
+```
+devnet-test-talk26.dot → bafybeib3m7hdv4ylu6dygrbifkfivpkebr4u5klyauzyktuojliicpbwsy
+✓ dist/ reconstruido da el mismo CID (4 chunks, 2.26 MB)
+✓ raíz  bafybeib3m7hdv4ylu6d… bloque 1001400 → caduca ~2026-10-12 19:28 UTC
+✓ chunk bafkreibkjlgyxpfo3fv… bloque 1001396 → caduca ~2026-10-12 19:27 UTC
+✓ chunk bafkreieit6lapydobeu… bloque 1001393 → caduca ~2026-10-12 19:27 UTC
+✓ chunk bafkreid5x2er3qgob5c… bloque 1001398 → caduca ~2026-10-12 19:28 UTC
+✓ chunk bafkreicq2mlhryiieyg… bloque 1001398 → caduca ~2026-10-12 19:28 UTC
+  Lo primero que caduca: en 201560 bloques, entre 2026-10-10 17:04 y 2026-10-13 12:15 UTC
+✓ el gateway IPFS entrega el deploy idéntico byte por byte a dist/
+✓ https://devnet-test-talk26.dev-dot.li responde 200
+```
+
+Cómo funciona, por si quieres hacerlo a mano:
+
+- `pad` no sube archivos sueltos: arma un CAR con todo `dist/` y lo parte en
+  **chunks** de hasta 2 MB, y cada chunk es una transacción en Bulletin.
+- El CID que guarda DotNS **no es el de tu carpeta**: es un nodo que enlaza esos
+  chunks. Por eso `https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs/<cid>`
+  entrega el CAR completo, y `…/<cid>/index.html` da 404.
+- `TransactionStorage.TransactionByContentHash(<hash del chunk>)` dice en qué
+  bloque se guardó cada chunk. Caduca en ese bloque + `RetentionPeriod`
+  (201,600 bloques: 14 días nominales, unos 16 reales porque los bloques
+  tardan de 6.5 a 7.2 s).
+
 ## 8. Publicar una versión nueva
 
 Repite `npm run deploy`. `pad` solo sube lo que cambió y apunta el nombre al
@@ -309,6 +347,28 @@ Así se ve (salida real de la segunda publicación de testalk):
 Cada versión tiene **otro origen** (otro hash), así que el `localStorage` del
 navegador empieza vacío. Para datos que deben sobrevivir entre versiones usa
 `getHostLocalStorage()` del SDK, y no publiques durante un evento en vivo.
+
+### Lo que no cambió no se vuelve a subir, y caduca antes
+
+En una versión nueva, `pad` 0.16.7 da por buenos los chunks que ya venían en
+la versión anterior: **no los vuelve a subir ni comprueba que sigan en
+Bulletin**. Lo dice así:
+
+```
+   Trusted: 1 chunks skipped without re-probe (chunks 1)
+```
+
+Esos chunks conservan el bloque de su **primera** subida, así que caducan 14
+días después de esa subida, no de la publicación nueva. Si publicaste el 1 de
+octubre y vuelves a publicar el 20 cambiando solo el JavaScript, las fuentes y
+las imágenes pueden desaparecer el 15 aunque la versión del 20 parezca nueva.
+Cuando el conjunto de archivos que no cambian sí cambia (agregas o quitas
+uno), `pad` sube ese chunk otra vez: en la sexta publicación de testalk los 4
+chunks quedaron del mismo día.
+
+`pad` 0.16.7 no tiene opción para forzar una subida completa. Antes de un
+evento, corre `npm run check-deploy` y mira **"Lo primero que caduca"**: tiene
+que caer después de que termine el evento.
 
 ## 9. La app y el host deben hablar el mismo protocolo
 
@@ -410,7 +470,7 @@ casi a diario (`product-sdk-host` pasó de 0.14 a 0.23 entre julio y septiembre
 de 2026), el protocolo entre app y host cambió de códec a mitad de septiembre,
 y la actualización del devnet de ese mes obligó a crear cuentas nuevas y movió
 los contratos de DotNS. La documentación oficial describe el camino ideal y va
-por detrás. Esto es lo que medimos el 25 de septiembre de 2026:
+por detrás. Esto es lo que medimos el 25 y 26 de septiembre de 2026:
 
 | La documentación dice | Lo que pasó de verdad |
 |---|---|
@@ -421,6 +481,8 @@ por detrás. Esto es lo que medimos el 25 de septiembre de 2026:
 | `SignerManager` para conectar la wallet | Entrega una cuenta **derivada para tu app**, no la identidad del usuario. Para firmar como la persona: username → dueño en People chain → `getLegacyAccountSigner(...).signBytes`; en Desktop 0.1.3 funciona (13 s) aunque `getLegacyAccounts()` devuelva 0 cuentas |
 | `getHostProvider(genesis)` para leer cadenas | En Desktop 0.1.3 no entregó Asset Hub: hace falta un RPC de respaldo |
 | (no lo menciona) | En Android subir a Bulletin falla; en el gateway web no se puede firmar ([TWR.DOT](https://github.com/TheWhiteRabbitM/TWR.DOT/blob/master/docs/devnet-issues.md)) |
+| (no lo menciona) | Una versión nueva no vuelve a subir lo que no cambió, y eso caduca con la fecha de su primera subida ([paso 8](#lo-que-no-cambió-no-se-vuelve-a-subir-y-caduca-antes)) |
+| (no lo menciona) | Vite copia a `dist/` archivos que tu app nunca pide, y `pad` los sube igual. Con transformers.js se colaba un wasm de 27 MB: al quitarlo ([`vite.config.ts`](../app/vite.config.ts)) el deploy de testalk pasó de 28 MB a 2.2 MB. Revisa `du -sh dist` antes de publicar |
 
 La lección: **no confíes en que algo funciona porque está documentado**.
 Pon una página de diagnóstico en tu app, córrela en el dispositivo real y

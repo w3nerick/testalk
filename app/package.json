@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && PAD_ENV=devnet pad dist devnet-test-talk26.dot",
+    "check-deploy": "node scripts/check-deploy.ts",
     "verify": "node scripts/verify.ts",
     "icon": "node scripts/icon.ts"
   },

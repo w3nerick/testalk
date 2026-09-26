@@ -78,7 +78,18 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     draw();
   };
 
+  const buttons = root.querySelectorAll<HTMLButtonElement>('#run, #run-bulletin');
   const run = async (withBulletin: boolean) => {
+    // Una corrida a la vez: dos mezclan sus líneas y mandan dos firmas al celular a la vez.
+    buttons.forEach(b => (b.disabled = true));
+    try {
+      await probe(withBulletin);
+    } finally {
+      buttons.forEach(b => (b.disabled = false));
+    }
+  };
+
+  const probe = async (withBulletin: boolean) => {
     lines.length = 0;
     copy.disabled = true;
     const inside = isInsideContainerSync();

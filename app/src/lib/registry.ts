@@ -3,7 +3,7 @@
  * `get(huella)` con la runtime API ReviveApi.call. Funciona igual con el
  * provider del host o con un WebSocket público.
  */
-import { Binary, type PolkadotClient } from 'polkadot-api';
+import { Binary, type PolkadotClient, type PolkadotSigner } from 'polkadot-api';
 import { decodeErrorResult, decodeFunctionResult, encodeFunctionData, type Abi } from 'viem';
 import abiJson from './TalkRegistry.abi.json' with { type: 'json' };
 import { REGISTRY_ADDRESS } from './network.ts';
@@ -112,6 +112,62 @@ const DISPATCH_ES: Record<string, string> = {
   'Revive.StorageDepositNotEnoughFunds': 'el saldo no alcanza para el depósito del sello',
   'Revive.OutOfGas': 'se quedó sin peso (OutOfGas)',
 };
+
+/** Tope de peso por extrínseco, con margen bajo el del runtime (el mismo que contract/scripts/lib.mjs). */
+const WEIGHT_CAP = { ref_time: 900_000_000_000n, proof_size: 3_000_000n };
+
+interface TxEvent {
+  type: string;
+  found?: boolean;
+  ok?: boolean;
+  txHash?: string;
+  block?: { number: number };
+  dispatchError?: unknown;
+}
+
+/** Firma, envía y espera a que el bloque quede finalizado; avisa cuando ya se firmó. */
+function submit(tx: { signSubmitAndWatch(s: PolkadotSigner): { subscribe(o: object): { unsubscribe(): void } } }, signer: PolkadotSigner, onSigned: () => void): Promise<{ block: number; txHash: string }> {
+  return new Promise((resolve, reject) => {
+    const sub = tx.signSubmitAndWatch(signer).subscribe({
+      next: (e: TxEvent) => {
+        if (e.type === 'signed') onSigned();
+        // Falló ya en el primer bloque: no hace falta esperar la finalización.
+        if (e.type === 'txBestBlocksState' && e.found && e.ok === false) {
+          sub.unsubscribe();
+          reject(new Error(describeDispatch(e.dispatchError)));
+        }
+        if (e.type === 'finalized') {
+          sub.unsubscribe();
+          if (e.ok) resolve({ block: e.block?.number ?? 0, txHash: e.txHash ?? '' });
+          else reject(new Error(describeDispatch(e.dispatchError)));
+        }
+      },
+      error: (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
+    });
+  });
+}
+
+/** `Revive.map_account`: una vez por cuenta, antes de su primera llamada a un contrato. */
+export function mapAccount(client: PolkadotClient, signer: PolkadotSigner, onSigned: () => void) {
+  return submit(client.getUnsafeApi().tx.Revive.map_account(), signer, onSigned);
+}
+
+/**
+ * Envía `seal()`. El peso y el depósito salen de la simulación, con margen:
+ * el cálculo automático de las librerías se queda corto y la llamada revierte
+ * con OutOfGas (TWR.DOT, DEVFEEDBACK #19). Lo que sobra se devuelve.
+ */
+export function submitSeal(client: PolkadotClient, signer: PolkadotSigner, a: SealArgs, sim: { weight: { ref_time: bigint; proof_size: bigint }; deposit: bigint }, onSigned: () => void) {
+  const cap = (x: bigint, max: bigint) => (x * 2n < max ? x * 2n : max);
+  const tx = client.getUnsafeApi().tx.Revive.call({
+    dest: REGISTRY_ADDRESS,
+    value: 0n,
+    weight_limit: { ref_time: cap(sim.weight.ref_time, WEIGHT_CAP.ref_time), proof_size: cap(sim.weight.proof_size, WEIGHT_CAP.proof_size) },
+    storage_deposit_limit: (sim.deposit * 3n) / 2n + 10n ** 9n,
+    data: Binary.fromHex(sealCallData(a)),
+  });
+  return submit(tx, signer, onSigned);
+}
 
 /** Un DispatchError de la api sin descriptors, en palabras. */
 function describeDispatch(e: unknown): string {

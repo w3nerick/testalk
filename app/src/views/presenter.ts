@@ -1,8 +1,11 @@
 import QRCode from 'qrcode';
 import { icon } from '../lib/icons';
-import { ASSET_HUB_GENESIS, NETWORK, chainSource, subscribeFinalized, type Block } from '../lib/chain';
-import { blockEntry, canonicalBytes, cidForBytes, type Artifact, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
-import { connectSpeaker, currentSpeaker, identityUnavailableReason, signBytes, useAppAccount, type Speaker } from '../lib/signer';
+import { ASSET_HUB_GENESIS, NETWORK, chainSource, getClient, subscribeFinalized, withReadClient, type Block } from '../lib/chain';
+import { blockEntry, canonicalBytes, cidForBytes, parseBlk, preimageKeyFromCid, type Artifact, type ChainEntry, type UnsignedArtifact } from '../lib/artifact';
+import { addressFor, connectSpeaker, currentSpeaker, hasIdentitySigner, identityUnavailableReason, signBytes, txSignerFor, useAppAccount, type Speaker, type SignerKind } from '../lib/signer';
+import { MIN_SEAL_BALANCE, freeBalance, isMapped, mapAccount, pas, readSeal, simulateSeal, submitSeal, type SealArgs } from '../lib/registry';
+import { isInsideContainerSync, requestPermission } from '@parity/product-sdk-host';
+import { withTimeout, TIMED_OUT, HOST_SUBMIT_MS } from '../lib/host';
 import { canUseBulletin, prepareBulletin, uploadArtifact } from '../lib/bulletin';
 import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
 import { requestHostPermissions } from '../lib/permissions';
@@ -10,7 +13,7 @@ import { startStt, stopStt, type SttStatus } from '../lib/stt';
 import { InAppMic, loadWhisper, whisperBackend, type LoadProgress } from '../lib/mic';
 import { vocabPrompt } from '../lib/speech';
 import { asciiBar } from '../lib/ascii';
-import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
+import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup, type Tone } from '../ui';
 import { setLocalArtifact } from './verifier';
 
 const DRAFT_KEY = 'testalk-draft';
@@ -577,15 +580,115 @@ export function renderPresenter(root: HTMLElement): Cleanup {
           <button class="btn sm" id="cj">${icon('copy')}Copiar JSON</button>
           ${onBulletin ? `<button class="btn sm" id="cp">${icon('copy')}Enlace</button>` : ''}
         </div>
+        ${onBulletin && isInsideContainerSync() ? '<div id="perm" style="width:100%"></div>' : ''}
       </div>`;
     box.querySelector('#dl')!.addEventListener('click', () => downloadJson(artifact, cid));
     // Respaldo de la descarga: en el celular un <a download> puede no hacer nada.
     box.querySelector('#cj')!.addEventListener('click', () => copyText(JSON.stringify(artifact), 'JSON copiado'));
     box.querySelector('#cp')?.addEventListener('click', () => copyText(url, 'Enlace copiado'));
+    const perm = box.querySelector<HTMLElement>('#perm');
+    if (perm) void permanentSeal(perm, artifact, cid);
   }
 
   setup();
   return () => cleanups.forEach(f => { try { f(); } catch { /* ya cerrado */ } });
+}
+
+/**
+ * Sello permanente desde la app. Bulletin borra el recibo a los 14 días;
+ * TalkRegistry en Asset Hub guarda su huella, la firma y el CID para siempre.
+ * Paga la identidad .dot si tiene saldo (si no, la cuenta de la app); si
+ * ninguna tiene PAS, lo sella el organizador con `npm run anchor`. Todo se
+ * comprueba antes de pedir la firma: saldo, mapeo y una simulación.
+ */
+async function permanentSeal(el: HTMLElement, artifact: Artifact, cid: string) {
+  const first = artifact.chain.find(e => 'full' in e) as { blk: string } | undefined;
+  const args: SealArgs = {
+    receiptHash: preimageKeyFromCid(cid),
+    pubkey: artifact.pubkey as `0x${string}`,
+    sig: artifact.sig as `0x${string}`,
+    anchorBlock: first ? parseBlk(first.blk) : 0,
+    cid,
+    title: artifact.title,
+  };
+  const show = (tone: Tone, title: string, detail: string, button = '') => {
+    el.innerHTML = `<div class="check-row ${tone === 'ok' ? 'ok' : ''}" style="text-align:left">${tag(tone)}<div class="grow">${title}
+      <div class="muted" style="font-size:13px">${detail}</div></div>${button}</div>`;
+  };
+  const sealedAt = (block: bigint | number) =>
+    show('ok', 'Sello permanente', `Anclado en Asset Hub en el bloque #${Number(block).toLocaleString('en-US')}. El recibo sigue verificable aunque Bulletin lo borre; guarda el JSON.`);
+
+  show('wait', 'Sello permanente', 'Comprobando el registro en Asset Hub…');
+  let payer: SignerKind;
+  let addr: string;
+  let balance: bigint;
+  try {
+    const existing = await withReadClient(c => readSeal(c, args.receiptHash));
+    if (existing) return sealedAt(existing.blockNumber);
+    const kinds: SignerKind[] = hasIdentitySigner() ? ['identity', 'app'] : ['app'];
+    const found: { k: SignerKind; a: string; b: bigint }[] = [];
+    for (const k of kinds) {
+      const a = addressFor(k);
+      if (a) found.push({ k, a, b: await withReadClient(c => freeBalance(c, a)) });
+    }
+    const pick = found.find(f => f.b >= MIN_SEAL_BALANCE);
+    if (!pick) {
+      return show('warn', 'Sin sello permanente',
+        `Bulletin borra el recibo a los 14 días. Para sellarlo en Asset Hub tu cuenta necesita al menos ${pas(MIN_SEAL_BALANCE)} (faucet.polkadot.io → Paseo Asset Hub), o pídele al organizador que lo selle. Descarga el JSON.`);
+    }
+    ({ k: payer, a: addr, b: balance } = pick);
+  } catch (e) {
+    return show('warn', 'Sello permanente sin comprobar', `No se pudo consultar Asset Hub (${esc((e as Error).message)}). Descarga el JSON: el organizador puede sellarlo después.`);
+  }
+
+  const who = payer === 'identity' ? 'tu identidad .dot' : 'la cuenta de la app';
+  const offer = (note = '') => {
+    show('idle', 'Sellar para siempre',
+      `Bulletin borra el recibo a los 14 días; en Asset Hub queda para siempre. Paga ${who} (saldo ${pas(balance)}): unos 0.03 PAS.${note ? ` ${note}` : ''}`,
+      `<button class="btn sm primary" id="perm-go">${icon('sealCheck')}Sellar</button>`);
+    el.querySelector('#perm-go')!.addEventListener('click', () => void go());
+  };
+  const go = async () => {
+    const signer = txSignerFor(payer);
+    if (!signer) return offer('No hay firmante: vuelve a conectar tu wallet.');
+    try {
+      show('wait', 'Sellar para siempre', 'Pidiendo permiso para enviar transacciones…');
+      const perm = await withTimeout(requestPermission({ tag: 'ChainSubmit', value: undefined }), HOST_SUBMIT_MS);
+      if (perm === TIMED_OUT) throw new Error('el host no respondió al permiso');
+      if (!perm.ok || !perm.value) throw new Error('permiso para enviar transacciones denegado');
+      const client = await getClient();
+      if (!(await withReadClient(c => isMapped(c, addr)))) {
+        show('wait', 'Sellar para siempre', 'Paso 1 de 2: aprueba en tu celular el registro de tu cuenta en Asset Hub (solo la primera vez).');
+        const m = await withTimeout(mapAccount(client, signer, () => show('wait', 'Sellar para siempre', 'Paso 1 de 2: esperando el bloque…')), SEAL_TX_MS);
+        if (m === TIMED_OUT) throw new Error('el registro de la cuenta no se confirmó a tiempo');
+      }
+      const sim = await withReadClient(c => simulateSeal(c, addr, args));
+      if (!sim.ok) throw new Error(`la simulación falló: ${sim.why}`);
+      show('wait', 'Sellar para siempre', 'Aprueba la transacción en tu celular.');
+      const r = await withTimeout(submitSeal(client, signer, args, sim, () =>
+        show('wait', 'Sellar para siempre', 'Enviada. Esperando a que el bloque quede finalizado (unos 20 s)…')), SEAL_TX_MS);
+      if (r === TIMED_OUT) {
+        // Pudo haber entrado: se revisa el registro antes de ofrecer otro intento.
+        const late = await withReadClient(c => readSeal(c, args.receiptHash)).catch(() => null);
+        if (late) return sealedAt(late.blockNumber);
+        throw new Error('no llegó la confirmación a tiempo; revisa en Verificar en un minuto antes de reintentar');
+      }
+      const seal = await withReadClient(c => readSeal(c, args.receiptHash)).catch(() => null);
+      sealedAt(seal?.blockNumber ?? r.block);
+    } catch (e) {
+      offer(`No se selló: ${esc(describeSealError(e))}.`);
+    }
+  };
+  offer();
+}
+
+/** Tiempo para firmar en el celular y que el bloque se finalice. */
+const SEAL_TX_MS = 240_000;
+
+function describeSealError(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e);
+  if (/reject|cancel|denied|Denied/i.test(m)) return 'cancelaste la firma';
+  return m;
 }
 
 function micButton(off: boolean, size: 'sm' | 'block'): string {

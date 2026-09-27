@@ -302,14 +302,23 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     const balances = new Map<SignerKind, bigint>();
     for (const k of kinds) {
       const addr = addressFor(k);
-      if (!addr) continue;
-      await step(`Saldo en Asset Hub (${label(k)})`, async () => {
-        const b = await withReadClient(c => freeBalance(c, addr));
-        balances.set(k, b);
-        return [b >= MIN_SEAL_BALANCE ? 'yes' : 'no', `${pas(b)} · ${addr}${b >= MIN_SEAL_BALANCE ? '' : ` · hace falta al menos ${pas(MIN_SEAL_BALANCE)} (faucet.polkadot.io → Paseo Asset Hub)`}`];
-      });
+      if (addr) balances.set(k, await withReadClient(c => freeBalance(c, addr)).catch(() => -1n));
     }
     const payer = kinds.find(k => (balances.get(k) ?? 0n) >= MIN_SEAL_BALANCE) ?? kinds[0];
+    const canPay = (balances.get(payer) ?? 0n) >= MIN_SEAL_BALANCE;
+    for (const k of kinds) {
+      const addr = addressFor(k);
+      const b = balances.get(k);
+      if (!addr || b === undefined) continue;
+      await step(`Saldo en Asset Hub (${label(k)})`, async () => {
+        if (b < 0n) return ['no', 'no se pudo consultar el saldo'];
+        if (b >= MIN_SEAL_BALANCE) return ['yes', `${pas(b)} · ${addr}${k === payer ? ' · esta cuenta pagaría el sello' : ''}`];
+        // Sin saldo solo importa si ninguna otra cuenta puede pagar.
+        return canPay
+          ? ['skip', `${pas(b)} · no hace falta: paga la ${label(payer)}`]
+          : ['no', `${pas(b)} · ${addr} · hace falta al menos ${pas(MIN_SEAL_BALANCE)} (faucet.polkadot.io → Paseo Asset Hub)`];
+      });
+    }
     const addr = addressFor(payer)!;
     const pubkey = keyFor(payer) as `0x${string}`;
 
@@ -342,7 +351,10 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         const tx = (await getClient()).getUnsafeApi().tx.System.remark({ remark: Binary.fromText('testalk diagnóstico') });
         const signed = await withTimeout(tx.sign(signer), HOST_SUBMIT_MS);
         if (signed === TIMED_OUT) return ['no', 'la firma no llegó a tiempo: revisa el celular'];
-        return ['yes', `firmó una transacción de ${(signed.length - 2) / 2} bytes; no se envió, no costó nada`];
+        // Según la versión de polkadot-api llega como hex o como bytes.
+        const out = signed as unknown as string | Uint8Array;
+        const size = typeof out === 'string' ? (out.length - 2) / 2 : out.length;
+        return ['yes', `firmó una transacción de ${size} bytes; no se envió, no costó nada`];
       });
     }
     copy.disabled = false;

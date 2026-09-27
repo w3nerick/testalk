@@ -5,16 +5,17 @@
  */
 import { getAccountsProvider, isChainSupported, isInsideContainerSync, requestDevicePermission, requestPermission } from '@parity/product-sdk-host';
 import { cryptoWaitReady, encodeAddress, signatureVerify } from '@polkadot/util-crypto';
-import { hexToU8a } from '@polkadot/util';
+import { hexToU8a, u8aToHex } from '@polkadot/util';
+import { Binary } from 'polkadot-api';
 import { icon } from '../lib/icons';
-import { waitForHost, withTimeout, TIMED_OUT, describeError, HOST_QUERY_MS } from '../lib/host';
-import { ASSET_HUB_GENESIS, chainSource, getClient, hashVia, hashAtHeight, subscribeFinalized, type Block } from '../lib/chain';
-import { connectSpeaker, currentSpeaker, hasIdentitySigner, identityUnavailableReason, keyFor, signBytes, type SignerKind } from '../lib/signer';
+import { waitForHost, withTimeout, TIMED_OUT, describeError, HOST_QUERY_MS, HOST_SUBMIT_MS } from '../lib/host';
+import { ASSET_HUB_GENESIS, chainSource, getClient, hashVia, hashAtHeight, subscribeFinalized, withReadClient, type Block } from '../lib/chain';
+import { addressFor, connectSpeaker, currentSpeaker, hasIdentitySigner, identityUnavailableReason, keyFor, signBytes, txSignerFor, type SignerKind } from '../lib/signer';
 import { lookupViaHost, prepareBulletin, uploadArtifact, viaGateway } from '../lib/bulletin';
 import { cidForBytes } from '../lib/artifact';
 import { IPFS_GATEWAY, PEOPLE_GENESIS } from '../lib/network';
 import { usernameOwner } from '../lib/people';
-import { readSeal } from '../lib/registry';
+import { MIN_SEAL_BALANCE, freeBalance, isMapped, pas, readSeal, simulateSeal } from '../lib/registry';
 import { remoteDomains, requestHostPermissions } from '../lib/permissions';
 import { STT_URL } from '../lib/stt';
 import { esc, tag, toast, topbar, type Cleanup } from '../ui';
@@ -49,8 +50,9 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         <div class="actions">
           <button class="btn primary" id="run">${icon('play')}Probar</button>
           <button class="btn" id="run-bulletin">${icon('fileArrowUp')}Probar con subida a Bulletin</button>
+          <button class="btn" id="run-seal">${icon('sealCheck')}Probar sello permanente</button>
         </div>
-        <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda de 1 a 3 min).</p>
+        <p class="faint" style="font-size:13px;margin:0">Te pedirá el micrófono: cuando aparezca "grabando", habla unos segundos. La prueba con subida además pide una firma y escribe ~60 bytes en Bulletin (tarda de 1 a 3 min). La del sello permanente revisa tu saldo en Asset Hub, simula el sello y pide firmar una transacción de prueba que no se envía: no cuesta nada.</p>
       </section>
       <section class="card checks" id="out"><div class="chk idle">${tag('idle')}<b>Sin ejecutar</b><p>Pulsa Probar.</p></div></section>
       <div class="actions"><button class="btn" id="copy" disabled>${icon('copy')}Copiar reporte</button></div>
@@ -78,12 +80,12 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     draw();
   };
 
-  const buttons = root.querySelectorAll<HTMLButtonElement>('#run, #run-bulletin');
-  const run = async (withBulletin: boolean) => {
+  const buttons = root.querySelectorAll<HTMLButtonElement>('#run, #run-bulletin, #run-seal');
+  const run = async (mode: 'basic' | 'bulletin' | 'seal') => {
     // Una corrida a la vez: dos mezclan sus líneas y mandan dos firmas al celular a la vez.
     buttons.forEach(b => (b.disabled = true));
     try {
-      await probe(withBulletin);
+      await (mode === 'seal' ? probeSeal() : probe(mode === 'bulletin'));
     } finally {
       buttons.forEach(b => (b.disabled = false));
     }
@@ -270,8 +272,85 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
     copy.disabled = false;
   };
 
-  root.querySelector('#run')!.addEventListener('click', () => run(false));
-  root.querySelector('#run-bulletin')!.addEventListener('click', () => run(true));
+  /**
+   * ¿Se puede sellar en TalkRegistry desde la app? Todo sin gastar: saldo,
+   * mapeo en pallet-revive, simulación de seal() y una transacción firmada que
+   * no se envía (lo único que no se sabe sin probarlo en el dispositivo es si
+   * el host firma transacciones con la identidad).
+   */
+  const probeSeal = async () => {
+    lines.length = 0;
+    copy.disabled = true;
+    const inside = isInsideContainerSync();
+    await step('Contenedor', async () => [inside ? 'yes' : 'skip', inside ? 'Dentro de Polkadot App / Desktop' : 'Navegador normal: modo ensayo']);
+    if (inside) await step('Canal con el host', async () => ((await waitForHost()) ? ['yes', 'connected'] : ['no', 'no llegó a connected en 12 s']));
+    await step('Wallet (SignerManager)', async () => {
+      const sp = currentSpeaker() ?? (await connectSpeaker());
+      return ['yes', `${sp.username ?? 'sin username'} · ${sp.address}`];
+    });
+    const sp = currentSpeaker();
+    if (!sp) { copy.disabled = false; return; }
+    if (sp.rehearsal) {
+      await step('Sello permanente', async () => ['skip', 'en modo ensayo no hay cuenta real que pague: pruébalo en Polkadot Desktop']);
+      copy.disabled = false;
+      return;
+    }
+
+    // Quién pagaría: la identidad si puede, si no la cuenta de la app.
+    const kinds: SignerKind[] = hasIdentitySigner() ? ['identity', 'app'] : ['app'];
+    const label = (k: SignerKind) => (k === 'identity' ? 'identidad .dot' : 'cuenta de la app');
+    const balances = new Map<SignerKind, bigint>();
+    for (const k of kinds) {
+      const addr = addressFor(k);
+      if (!addr) continue;
+      await step(`Saldo en Asset Hub (${label(k)})`, async () => {
+        const b = await withReadClient(c => freeBalance(c, addr));
+        balances.set(k, b);
+        return [b >= MIN_SEAL_BALANCE ? 'yes' : 'no', `${pas(b)} · ${addr}${b >= MIN_SEAL_BALANCE ? '' : ` · hace falta al menos ${pas(MIN_SEAL_BALANCE)} (faucet.polkadot.io → Paseo Asset Hub)`}`];
+      });
+    }
+    const payer = kinds.find(k => (balances.get(k) ?? 0n) >= MIN_SEAL_BALANCE) ?? kinds[0];
+    const addr = addressFor(payer)!;
+    const pubkey = keyFor(payer) as `0x${string}`;
+
+    await step(`Mapeo en pallet-revive (${label(payer)})`, async () =>
+      (await withReadClient(c => isMapped(c, addr)))
+        ? ['yes', 'mapeada: puede llamar contratos']
+        : ['skip', 'sin mapear: la primera vez hará falta una firma extra (Revive.map_account)']);
+
+    await step(`Simulación de seal() (${label(payer)})`, async () => {
+      const r = await withReadClient(c => simulateSeal(c, addr, {
+        receiptHash: u8aToHex(crypto.getRandomValues(new Uint8Array(32))) as `0x${string}`,
+        pubkey,
+        sig: `0x${'00'.repeat(64)}`,
+        anchorBlock: 1,
+        cid: 'diagnostico',
+        title: 'diagnóstico',
+      }));
+      return r.ok
+        ? ['yes', `pasaría · depósito ${pas(r.deposit)} · peso ${(Number(r.weight.ref_time) / 1e9).toFixed(1)} G / ${r.weight.proof_size} B`]
+        : ['no', r.why];
+    });
+
+    if (inside) {
+      await step(`El host firma una transacción (${label(payer)}, no se envía)`, async () => {
+        const perm = await withTimeout(requestPermission({ tag: 'ChainSubmit', value: undefined }), HOST_SUBMIT_MS);
+        if (perm === TIMED_OUT) return ['no', 'el host no respondió al permiso ChainSubmit'];
+        if (!perm.ok || !perm.value) return ['no', 'permiso ChainSubmit denegado'];
+        const signer = txSignerFor(payer);
+        if (!signer) return ['no', 'sin firmante de transacciones para esta cuenta'];
+        const tx = (await getClient()).getUnsafeApi().tx.System.remark({ remark: Binary.fromText('testalk diagnóstico') });
+        const signed = await withTimeout(tx.sign(signer), HOST_SUBMIT_MS);
+        if (signed === TIMED_OUT) return ['no', 'la firma no llegó a tiempo: revisa el celular'];
+        return ['yes', `firmó una transacción de ${(signed.length - 2) / 2} bytes; no se envió, no costó nada`];
+      });
+    }
+    copy.disabled = false;
+  };
+
+  root.querySelector('#run')!.addEventListener('click', () => run('basic'));
+  root.querySelector('#run-bulletin')!.addEventListener('click', () => run('bulletin'));
+  root.querySelector('#run-seal')!.addEventListener('click', () => run('seal'));
   copy.addEventListener('click', () => {
     const txt = [`testalk diagnóstico ${new Date().toISOString()}`, navigator.userAgent, sdkLine(), '']
       .concat(lines.map(l => `[${l.status.toUpperCase().padEnd(4)}] ${l.name}${l.ms !== undefined ? ` (${l.ms} ms)` : ''}: ${l.detail}`))

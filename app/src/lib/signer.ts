@@ -156,3 +156,19 @@ export function keyFor(kind: SignerKind): string | null {
   if (kind === 'identity') return identity?.pubkey ?? null;
   return appKey?.pubkey ?? null;
 }
+
+/** Dirección SS58 de cada camino. */
+export function addressFor(kind: SignerKind): string | null {
+  if (kind === 'identity') return identity?.address ?? null;
+  return appKey?.address ?? null;
+}
+
+/**
+ * Firmante de transacciones de cada camino. Con la identidad, el host firma con
+ * `createTransactionWithLegacyAccount`; en algunas versiones del host eso
+ * responde "Not implemented" (TWR.DOT/chirp), por eso el diagnóstico lo prueba.
+ */
+export function txSignerFor(kind: SignerKind): PolkadotSigner | null {
+  if (kind === 'identity') return identity?.signer ?? null;
+  return manager?.getSigner() ?? null;
+}

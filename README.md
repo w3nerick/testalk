@@ -212,6 +212,15 @@ descarga el modelo de Whisper (~480 MB para `small`). Las frases quedan en
 
 ### 3. Anclar un recibo para siempre
 
+**Desde la app:** al terminar la charla, en "Charla sellada", **Sellar para siempre**
+(una firma en el celular, ~0.03 PAS de la identidad `.dot`; si la cuenta aún no
+está mapeada en pallet-revive, una firma más la primera vez). Antes de pedir la
+firma la app revisa el saldo y simula `seal()`; `#/diagnostico` → **Probar sello
+permanente** hace lo mismo sin gastar. Probado en Polkadot Desktop 0.1.3 el
+27 sep 2026 (bloque #13,773,763).
+
+**Desde la terminal** (el organizador, si el presentador no tiene PAS):
+
 ```bash
 cd contract
 npm install
@@ -273,7 +282,7 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Corregir en código los hallazgos de la [revisión del 25 sep 2026](docs/platform-review-2026-09-25.md) contra TWR.DOT y la documentación de PCF; los que dependen del dispositivo se miden con `#/diagnostico`
 - [x] `TalkRegistry` desplegado en pallet-revive: huella, firma y cota superior de tiempo, permanentes
 - [x] Verificador web y CLI consultan el registro
-- [ ] Anclar desde la app al sellar (hoy se ancla con `npm run anchor` después de la charla)
+- [x] Anclar desde la app al sellar: **Sellar para siempre** en "Charla sellada" (Revive.call a TalkRegistry firmado por la identidad `.dot`); `npm run anchor` queda de respaldo
 - [x] Verificar en People chain que el username declarado sea dueño de la llave (web y CLI)
 - [x] Firmar con la identidad `.dot` (username → People chain → cuenta dueña), con la cuenta de la app de respaldo
 - [ ] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): lo mide `#/diagnostico`

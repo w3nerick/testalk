@@ -22,6 +22,11 @@ export interface SegmenterOptions {
   maxSeconds: number;
   /** Frases más cortas que esto se descartan (golpes, clics). */
   minSeconds: number;
+  /**
+   * Al llegar al tope hablando de corrido, tramos de 30 ms hacia atrás donde se
+   * busca el hueco más silencioso para cortar. 0 = cortar justo en el tope.
+   */
+  splitFrames: number;
 }
 
 export const SEGMENTER_DEFAULTS: SegmenterOptions = {
@@ -30,6 +35,7 @@ export const SEGMENTER_DEFAULTS: SegmenterOptions = {
   prerollFrames: 10,
   maxSeconds: 12,
   minSeconds: 0.4,
+  splitFrames: 50,
 };
 
 export class Segmenter {
@@ -40,6 +46,7 @@ export class Segmenter {
   private voicedRun = 0;
   private silentRun = 0;
   private seg: Float32Array[] = [];
+  private segDb: number[] = [];
   private segSamples = 0;
   private segMinDb = 0;
   private preroll: Float32Array[] = [];
@@ -97,6 +104,7 @@ export class Segmenter {
         this.speaking = true;
         this.silentRun = 0;
         this.seg = [...this.preroll];
+        this.segDb = this.preroll.map(() => Infinity);
         this.segSamples = this.seg.length * FRAME;
         this.segMinDb = db;
         this.preroll = [];
@@ -104,6 +112,7 @@ export class Segmenter {
       return;
     }
     this.seg.push(frame);
+    this.segDb.push(db);
     this.segSamples += FRAME;
     this.segMinDb = Math.min(this.segMinDb, db);
     this.silentRun = voiced ? 0 : this.silentRun + 1;
@@ -113,8 +122,33 @@ export class Segmenter {
       // ventiladores) por encima del piso aprendido, todo parece voz y el piso no
       // se actualiza mientras "habla". Lo más bajo de la frase es el ruido real.
       this.noiseDb = Math.max(this.noiseDb, this.segMinDb);
-      this.endSegment();
+      this.splitAtQuietest();
     }
+  }
+
+  /**
+   * Quien lee de corrido no hace pausas de medio segundo: la frase llega al
+   * tope y cortarla ahí parte palabras ("mientras hablo esta | [app] transcribe").
+   * Se corta en el tramo más silencioso de los últimos splitFrames (el hueco
+   * entre dos palabras) y lo que sigue abre la frase siguiente.
+   */
+  private splitAtQuietest() {
+    let at = this.seg.length;
+    let min = Infinity;
+    for (let i = Math.max(1, this.seg.length - this.opts.splitFrames); i < this.seg.length; i++) {
+      if (this.segDb[i] < min) { min = this.segDb[i]; at = i; }
+    }
+    const rest = this.seg.splice(at);
+    const restDb = this.segDb.splice(at);
+    this.segSamples = this.seg.length * FRAME;
+    this.endSegment();
+    if (!rest.length) return;
+    this.speaking = true;
+    this.silentRun = 0;
+    this.seg = rest;
+    this.segDb = restDb;
+    this.segSamples = rest.length * FRAME;
+    this.segMinDb = Math.min(...restDb);
   }
 
   private endSegment() {
@@ -127,6 +161,7 @@ export class Segmenter {
       this.onSegment(audio);
     }
     this.seg = [];
+    this.segDb = [];
     this.segSamples = 0;
   }
 }
@@ -134,8 +169,11 @@ export class Segmenter {
 /** Tokens máximos por tramo: unos 8 por segundo de audio. Un bucle no puede crecer más allá. */
 export const maxTokens = (samples: number) => Math.min(160, Math.ceil((samples / RATE) * 8) + 10);
 
-/** Frases que Whisper inventa sobre silencio o ruido; no son de quien habla. */
-const HALLUCINATION = /amara\.org|subt[ií]tul|suscr[ií]b|gracias por ver|^\s*[[(].*[\])]\s*$|^[\s\p{P}]*$/iu;
+/**
+ * Frases que Whisper inventa sobre silencio o ruido; no son de quien habla.
+ * Incluye una dirección web sola ("www.apet.com"): sale del ruido al final.
+ */
+const HALLUCINATION = /amara\.org|subt[ií]tul|suscr[ií]b|gracias por ver|^\s*[[(].*[\])]\s*$|^[\s\p{P}]*$|^\s*(?:www\.|https?:\/\/)\S+\s*$/iu;
 
 /**
  * Colapsa los bucles de Whisper: "sus-sus-sus" → "sus", "cadena cadena cadena" → "cadena".

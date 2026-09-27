@@ -11,7 +11,8 @@
  *
  * Cada corrida es corte:modelo:contexto
  *   corte     viejo = como la app hasta 27 sep (perdía 256 de cada 4096 muestras) ·
- *             12s = pausa 0.5 s, tope 12 s · 20s = pausa 0.8 s, tope 20 s
+ *             12s = pausa 0.5 s, tope 12 s (corta en el hueco más silencioso) ·
+ *             duro = igual, pero corta justo en el tope · 20s = pausa 0.8 s, tope 20 s
  *   modelo    gpu = encoder fp32 + decoder q4 (~206 MB, lo que baja WebGPU) ·
  *             q4 = todo q4 (~142 MB) · q8 = todo q8 (~77 MB, lo que baja WASM)
  *   contexto  - = sin vocabulario · vocab = BASE_VOCAB de src/lib/speech.ts (o --vocab "…")
@@ -25,6 +26,7 @@ import { loadAsr, transcribeSegment, type Asr, type Dtype } from '../src/lib/whi
 
 const CUTS: Record<string, { opts: Partial<SegmenterOptions>; chunk: number }> = {
   viejo: { opts: { endFrames: 17, maxSeconds: 12 }, chunk: 3840 },
+  duro: { opts: { endFrames: 17, maxSeconds: 12, splitFrames: 0 }, chunk: 4096 },
   '12s': { opts: { endFrames: 17, maxSeconds: 12 }, chunk: 4096 },
   '20s': { opts: { endFrames: 27, maxSeconds: 20 }, chunk: 4096 },
 };

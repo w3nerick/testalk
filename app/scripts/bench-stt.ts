@@ -10,9 +10,11 @@
  *   npm run bench-stt -- grabacion.wav --run 12s:gpu:-,20s:q8:vocab --json salida.json
  *
  * Cada corrida es corte:modelo:contexto
- *   corte     viejo = como la app hasta 27 sep (perdía 256 de cada 4096 muestras) ·
+ *   corte     app = lo que usa la app (SEGMENTER_DEFAULTS) ·
+ *             viejo = como la app hasta 27 sep (perdía 256 de cada 4096 muestras) ·
  *             12s = pausa 0.5 s, tope 12 s (corta en el hueco más silencioso) ·
- *             duro = igual, pero corta justo en el tope · 20s = pausa 0.8 s, tope 20 s
+ *             duro = igual, pero corta justo en el tope · 20s = pausa 0.8 s, tope 20 s ·
+ *             28s = pausa 0.8 s, tope 28 s (Whisper escucha ventanas de 30 s)
  *   modelo    gpu = encoder fp32 + decoder q4 (~206 MB, lo que baja WebGPU) ·
  *             q4 = todo q4 (~142 MB) · q8 = todo q8 (~77 MB, lo que baja WASM)
  *   contexto  - = sin vocabulario · vocab = BASE_VOCAB de src/lib/speech.ts (o --vocab "…")
@@ -25,10 +27,12 @@ import { BASE_VOCAB, RATE, Segmenter, cleanText, maxTokens, type SegmenterOption
 import { loadAsr, transcribeSegment, type Asr, type Dtype } from '../src/lib/whisper.ts';
 
 const CUTS: Record<string, { opts: Partial<SegmenterOptions>; chunk: number }> = {
+  app: { opts: {}, chunk: 4096 },
   viejo: { opts: { endFrames: 17, maxSeconds: 12 }, chunk: 3840 },
   duro: { opts: { endFrames: 17, maxSeconds: 12, splitFrames: 0 }, chunk: 4096 },
   '12s': { opts: { endFrames: 17, maxSeconds: 12 }, chunk: 4096 },
   '20s': { opts: { endFrames: 27, maxSeconds: 20 }, chunk: 4096 },
+  '28s': { opts: { endFrames: 27, maxSeconds: 28 }, chunk: 4096 },
 };
 const MODELS: Record<string, Dtype> = {
   gpu: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
@@ -42,7 +46,7 @@ const flag = (name: string) => {
   return i >= 0 ? args.splice(i, 2)[1] : undefined;
 };
 const refPath = flag('--ref');
-const runsArg = flag('--run') ?? '12s:gpu:-';
+const runsArg = flag('--run') ?? 'app:gpu:vocab';
 const vocab = flag('--vocab') ?? BASE_VOCAB;
 const jsonOut = flag('--json');
 const lang = (flag('--lang') ?? 'es') as 'es' | 'en';

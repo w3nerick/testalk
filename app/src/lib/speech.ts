@@ -29,11 +29,17 @@ export interface SegmenterOptions {
   splitFrames: number;
 }
 
+/**
+ * Frases largas: Whisper escucha ventanas de 30 s y con más contexto se
+ * equivoca menos. Con una grabación real leyendo stt/guion-demo.txt, pasar de
+ * 0.5 s / 12 s a 0.8 s / 20 s bajó el error de 21 % a 16 % (más que cambiar a
+ * Whisper small). El costo: el texto aparece en pantalla en bloques más largos.
+ */
 export const SEGMENTER_DEFAULTS: SegmenterOptions = {
   startFrames: 3,
-  endFrames: 17,
+  endFrames: 27,
   prerollFrames: 10,
-  maxSeconds: 12,
+  maxSeconds: 20,
   minSeconds: 0.4,
   splitFrames: 50,
 };

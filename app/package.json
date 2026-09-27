@@ -10,7 +10,8 @@
     "deploy": "npm run build && PAD_ENV=devnet pad dist devnet-test-talk26.dot",
     "check-deploy": "node scripts/check-deploy.ts",
     "verify": "node scripts/verify.ts",
-    "icon": "node scripts/icon.ts"
+    "icon": "node scripts/icon.ts",
+    "bench-stt": "node --import ./scripts/ort-web-node.mjs scripts/bench-stt.ts"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",

@@ -29,7 +29,7 @@ flowchart LR
 
 | | Script de Python (`stt/`) | Micrófono de la app (`lib/mic.ts`) |
 |---|---|---|
-| Qué instalar | Python 3.10+ y `faster-whisper` | Nada: se baja Whisper la primera vez (~80-200 MB) |
+| Qué instalar | Python 3.10+ y `faster-whisper` | Nada: se baja Whisper (~80-200 MB); en Polkadot Desktop, en cada arranque |
 | Modelo | `small` (mejor en español) | `base` |
 | Dónde corre | CPU de la laptop | El navegador de Polkadot Desktop (WebGPU si hay) |
 | Audio | No se guarda (con `--guardar-audio`, copia local) | No se guarda |
@@ -70,7 +70,9 @@ hash en Bulletin y las rutas profundas no tienen fallback a `index.html`.
 | `lib/artifact.ts` | Tipos del recibo, validación de forma, bytes canónicos, CID, verificación de firma, de identidad y de bloques. Es el módulo que comparten la app y el CLI. |
 | `lib/stt.ts` | Cliente WebSocket del transcriptor con reconexión y petición de sellado. |
 | `lib/whisper.worker.ts` | Whisper en un Web Worker. En el hilo principal la inferencia congelaba la página hasta 90 s; en el worker la interfaz responde en 0-2 ms. Si el contenedor no deja crear workers, `mic.ts` lo carga en el hilo principal. |
-| `lib/mic.ts` | Transcripción **dentro de la app**, sin Python: micrófono del contenedor (`requestDevicePermission('Microphone')` + `getUserMedia`), detector de voz por energía con los mismos tiempos que el script (90 ms / 510 ms / 12 s), Whisper base con `transformers.js` (WebGPU o WebAssembly) una frase a la vez, con `no_repeat_ngram_size: 3`, un tope de tokens por segundo de audio y un filtro que descarta los bucles típicos de Whisper ("cadena cadena cadena…"). El micrófono se apaga de verdad (suelta el dispositivo) con el botón o la tecla **M**; lo dicho apagado no se transcribe. El audio no se guarda: cada tramo se descarta en cuanto se transcribe. El modelo se baja de Hugging Face la primera vez y queda en la caché. |
+| `lib/mic.ts` | Transcripción **dentro de la app**, sin Python: micrófono del contenedor (`requestDevicePermission('Microphone')` + `getUserMedia`), carga de Whisper base (WebGPU o WebAssembly, en un worker si se puede) y una frase a la vez. El micrófono se apaga de verdad (suelta el dispositivo) con el botón o la tecla **M**; lo dicho apagado no se transcribe. El audio no se guarda: cada tramo se descarta en cuanto se transcribe. El modelo se baja de Hugging Face; Polkadot Desktop no conserva el almacenamiento de las apps, así que ahí se vuelve a bajar en cada arranque. |
+| `lib/speech.ts` | Sin dependencias, para que el banco de pruebas use el mismo código: detector de voz por energía con los tiempos del script (90 ms / 510 ms / 12 s), que junta el audio entre bloques (el micrófono entrega 4096 muestras, no múltiplo de los tramos de 480) y corrige su piso de ruido si una frase llega al tope sin pausa (ruido constante); filtro de bucles y alucinaciones típicas de Whisper; vocabulario base. |
+| `lib/whisper.ts` | Whisper con `transformers.js` llamando a `generate` directamente para pasar **vocabulario como contexto** (`<\|startofprev\|>` + términos: Polkadot, Bulletin, Asset Hub… más el evento y las palabras clave de quien presenta). `no_repeat_ngram_size: 3` solo sobre lo generado y tope de tokens por segundo de audio. Si la salida parece copia del vocabulario o es demasiado corta para el audio, se transcribe otra vez sin contexto. |
 
 ## Flujo del presentador
 

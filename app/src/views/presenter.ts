@@ -8,6 +8,7 @@ import { APP_DOTNS, WEB_GATEWAY } from '../lib/network';
 import { requestHostPermissions } from '../lib/permissions';
 import { startStt, stopStt, type SttStatus } from '../lib/stt';
 import { InAppMic, loadWhisper, whisperBackend, type LoadProgress } from '../lib/mic';
+import { vocabPrompt } from '../lib/speech';
 import { asciiBar } from '../lib/ascii';
 import { copyText, esc, fmtDuration, shortAddr, tag, toast, topbar, type Cleanup } from '../ui';
 import { setLocalArtifact } from './verifier';
@@ -18,6 +19,8 @@ interface Draft {
   title: string;
   venue: string;
   lang: string;
+  /** Palabras clave para el transcriptor; no entran al recibo. */
+  vocab?: string;
   startedAt: string | null;
   chain: ChainEntry[];
 }
@@ -42,7 +45,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let sttStatus: SttStatus = 'off';
   let latest: Block | null = null;
   let recent: Block[] = [];
-  const draft: Draft = { title: '', venue: '', lang: 'es', startedAt: null, chain: [] };
+  const draft: Draft = { title: '', venue: '', lang: 'es', vocab: '', startedAt: null, chain: [] };
   let awaitingBlock = false;
   // Una vez firmado, un fallo de subida no debe volver a pedir la firma.
   let signed: { artifact: Artifact; bytes: Uint8Array; cid: string } | null = null;
@@ -69,6 +72,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   let micNote = '';
   let micProgress: LoadProgress | null = null;
   let heard = '';
+  let micPrompt = vocabPrompt();
+  const setMicPrompt = (p: string) => { micPrompt = p; appMic?.setPrompt(p); };
   const micListeners = new Set<() => void>();
   const levelListeners = new Set<(db: number, speaking: boolean) => void>();
   const micChanged = () => micListeners.forEach(f => f());
@@ -98,6 +103,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       onLevel: (db, speaking) => levelListeners.forEach(f => f(db, speaking)),
       onError: m => console.warn('[mic]', m),
     });
+    mic.setPrompt(micPrompt);
     try {
       await mic.open();
       await loadWhisper(p => { micProgress = p; micChanged(); });
@@ -157,6 +163,11 @@ export function renderPresenter(root: HTMLElement): Cleanup {
               </select>
             </div>
           </div>
+          <div class="field">
+            <label for="vocab">Palabras clave · opcional</label>
+            <input class="input" id="vocab" maxlength="300" placeholder="Nombres, siglas y términos: Parity, DotNS, Kusama" value="${esc(saved?.vocab ?? '')}" />
+            <p class="muted" style="margin:0;font-size:13px">Ayudan al micrófono de la app a escribirlas bien. No entran al recibo.</p>
+          </div>
           <div class="check-row" id="wallet-row"></div>
           <div class="check-row" id="stt-row"></div>
           <div class="check-row" id="chain-row"></div>
@@ -172,6 +183,12 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     const err = root.querySelector<HTMLElement>('#err')!;
     const start = root.querySelector<HTMLButtonElement>('#start')!;
     (root.querySelector('#lang') as HTMLSelectElement).value = saved?.lang ?? 'es';
+    const venueIn = root.querySelector<HTMLInputElement>('#venue')!;
+    const vocabIn = root.querySelector<HTMLInputElement>('#vocab')!;
+    const syncPrompt = () => setMicPrompt(vocabPrompt(venueIn.value, vocabIn.value));
+    syncPrompt();
+    venueIn.addEventListener('input', syncPrompt);
+    vocabIn.addEventListener('input', syncPrompt);
 
     const drawWallet = (s = currentSpeaker()) => {
       walletRow.className = `check-row ${s ? 'ok' : ''}`;
@@ -212,7 +229,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
         sttRow.innerHTML = `${tag('wait')}<div class="grow">Preparando el micrófono de la app
           <div class="muted mono" style="font-size:12.5px">${p && p.total
             ? `${asciiBar(p.loaded, p.total)} ${Math.round(p.progress)} % · ${Math.round(p.loaded / 1e6)} de ${Math.round(p.total / 1e6)} MB`
-            : 'Permiso del micrófono y descarga de Whisper (solo la primera vez)'}</div></div>`;
+            : 'Permiso del micrófono y descarga de Whisper'}</div></div>`;
         return;
       }
       if (s === 'on') {
@@ -257,6 +274,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       draft.title = (root.querySelector('#title') as HTMLInputElement).value.trim() || 'Charla sin título';
       draft.venue = (root.querySelector('#venue') as HTMLInputElement).value.trim();
       draft.lang = (root.querySelector('#lang') as HTMLSelectElement).value;
+      draft.vocab = vocabIn.value.trim();
+      setMicPrompt(vocabPrompt(draft.venue, draft.vocab));
       if (resume && saved) {
         draft.chain = saved.chain;
         draft.startedAt = saved.startedAt;

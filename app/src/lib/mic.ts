@@ -3,38 +3,27 @@
  * navegador (transformers.js, con WebGPU o WebAssembly). Hace lo mismo que
  * stt/testalk_stt.py sin instalar nada en la laptop.
  *
- * Mismo esquema que el script de Python: un detector de voz por energía abre
- * la frase tras ~90 ms de voz y la cierra tras ~510 ms de silencio (tope de
- * 12 s), y se transcribe una frase a la vez para que la latencia no se acumule.
- * El audio no se guarda: cada tramo se descarta en cuanto se transcribe. El
- * recibo lleva solo el texto; la referencia externa es el video de la charla.
+ * El micrófono entrega bloques de audio al segmentador (speech.ts), que los
+ * corta en frases; se transcribe una frase a la vez para que la latencia no se
+ * acumule. El audio no se guarda: cada tramo se descarta en cuanto se
+ * transcribe. El recibo lleva solo el texto; la referencia externa es el video
+ * de la charla.
  *
- * El modelo (~80-200 MB) se descarga de Hugging Face la primera vez y queda en
- * la caché del navegador: en un evento, se precarga antes de subir al escenario.
+ * El modelo (~80-200 MB) se descarga de Hugging Face. Polkadot Desktop no
+ * conserva el almacenamiento de las apps al cerrarse: se vuelve a descargar en
+ * cada arranque. En un evento, se carga antes de subir al escenario y Desktop
+ * no se cierra hasta terminar.
  */
 import { isInsideContainerSync, requestDevicePermission } from '@parity/product-sdk-host';
 import { withTimeout, TIMED_OUT } from './host';
+import { RATE, Segmenter, cleanText, maxTokens } from './speech';
+import type { Device, LoadProgress, TranscribeOptions } from './whisper';
 
-export const WHISPER_MODEL = 'onnx-community/whisper-base';
+export type { LoadProgress };
+export type Backend = Exclude<Device, 'cpu'>;
 
-const RATE = 16_000;
-const FRAME = 480; // 30 ms
-const START_FRAMES = 3; // ~90 ms de voz abren la frase
-const END_FRAMES = 17; // ~510 ms de silencio la cierran
-const PREROLL_FRAMES = 10; // 300 ms antes de la voz, para no cortar la primera sílaba
-const MAX_SAMPLES = 12 * RATE;
-const MIN_SAMPLES = 0.4 * RATE;
-
-export type Backend = 'webgpu' | 'wasm';
-
-export interface LoadProgress {
-  loaded: number;
-  total: number;
-  progress: number;
-}
-
-/** Transcribe un tramo de audio a 16 kHz; devuelve el texto tal cual lo da Whisper. */
-type Transcribe = (audio: Float32Array, language: string) => Promise<string>;
+/** Transcribe una frase de audio a 16 kHz; devuelve el texto tal cual lo da Whisper. */
+type Transcribe = (audio: Float32Array, options: TranscribeOptions) => Promise<string>;
 
 let transcribe: Transcribe | null = null;
 let backend: Backend | null = null;
@@ -48,9 +37,6 @@ async function hasWebGPU(): Promise<boolean> {
 export function whisperBackend(): Backend | null {
   return backend;
 }
-
-/** Tokens máximos por tramo: unos 8 por segundo de audio. Un bucle no puede crecer más allá. */
-const maxTokens = (samples: number) => Math.min(160, Math.ceil((samples / RATE) * 8) + 10);
 
 /** Carga Whisper en un Web Worker (la interfaz no se congela). Si el contenedor no deja crear workers, en el hilo principal. */
 function viaWorker(device: Backend, onProgress: (p: LoadProgress) => void): Promise<Transcribe> {
@@ -67,11 +53,11 @@ function viaWorker(device: Backend, onProgress: (p: LoadProgress) => void): Prom
       const m = e.data as { type: string; id?: number; text?: string; error?: string; message?: string } & LoadProgress;
       if (m.type === 'progress') onProgress({ loaded: m.loaded, total: m.total, progress: m.progress });
       else if (m.type === 'ready') {
-        resolve((audio, language) =>
+        resolve((audio, options) =>
           new Promise<string>((ok, fail) => {
             const id = ++seq;
             pending.set(id, { ok, fail });
-            worker.postMessage({ type: 'transcribe', id, audio, language, maxNewTokens: maxTokens(audio.length) }, [audio.buffer]);
+            worker.postMessage({ type: 'transcribe', id, audio, options }, [audio.buffer]);
           }));
       } else if (m.type === 'error') {
         worker.terminate();
@@ -87,24 +73,15 @@ function viaWorker(device: Backend, onProgress: (p: LoadProgress) => void): Prom
       worker.terminate();
       reject(new Error(e.message || 'no se pudo iniciar el worker de Whisper'));
     };
-    worker.postMessage({ type: 'load', model: WHISPER_MODEL, device });
+    worker.postMessage({ type: 'load', device });
   });
 }
 
 async function viaMainThread(device: Backend, onProgress: (p: LoadProgress) => void): Promise<Transcribe> {
-  const { pipeline, env } = await import('@huggingface/transformers');
+  const [{ env }, { loadAsr, transcribeSegment }] = await Promise.all([import('@huggingface/transformers'), import('./whisper')]);
   env.allowLocalModels = false;
-  const asr = (await pipeline('automatic-speech-recognition', WHISPER_MODEL, {
-    device,
-    dtype: device === 'webgpu' ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8',
-    progress_callback: (p: { status: string; loaded?: number; total?: number; progress?: number }) => {
-      if (p.status === 'progress_total') onProgress({ loaded: p.loaded ?? 0, total: p.total ?? 0, progress: p.progress ?? 0 });
-    },
-  })) as unknown as (audio: Float32Array, opts: Record<string, unknown>) => Promise<{ text: string } | { text: string }[]>;
-  return async (audio, language) => {
-    const out = await asr(audio, { language, task: 'transcribe', no_repeat_ngram_size: 3, max_new_tokens: maxTokens(audio.length) });
-    return Array.isArray(out) ? out.map(o => o.text).join(' ') : out.text;
-  };
+  const asr = await loadAsr(device, onProgress);
+  return (audio, options) => transcribeSegment(asr, audio, options);
 }
 
 /** Carga Whisper una sola vez: WebGPU si hay, si no WebAssembly; en un worker si se puede. */
@@ -130,24 +107,6 @@ export function loadWhisper(onProgress: (p: LoadProgress) => void): Promise<Back
   return loading;
 }
 
-/** Frases que Whisper inventa sobre silencio o ruido; no son de quien habla. */
-const HALLUCINATION = /amara\.org|subt[ií]tul|suscr[ií]b|gracias por ver|^\s*[[(].*[\])]\s*$|^[\s\p{P}]*$/iu;
-
-/**
- * Colapsa los bucles de Whisper: "sus-sus-sus" → "sus", "cadena cadena cadena" → "cadena".
- * Si el texto era casi todo repetición, no lo dijo nadie: se descarta.
- */
-export function cleanText(t: string): string {
-  const text = t.replace(/\s+/g, ' ').trim();
-  if (HALLUCINATION.test(text)) return '';
-  const collapsed = text
-    .replace(/(?<!\p{L})(\p{L}+)(?:-\1(?!\p{L})){2,}/giu, '$1')
-    .replace(/(?<!\p{L})(\p{L}+)(?:[\s,.;:!¡¿?]+\1(?!\p{L})){2,}/giu, '$1')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return collapsed.length < text.length * 0.4 ? '' : collapsed;
-}
-
 const AUDIO: MediaStreamConstraints = {
   audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true },
 };
@@ -164,17 +123,15 @@ export class InAppMic {
   private stream?: MediaStream;
   private src?: MediaStreamAudioSourceNode;
   private node?: ScriptProcessorNode;
-  private noiseDb = -60;
-  private voicedRun = 0;
-  private silentRun = 0;
-  private speaking = false;
-  private seg: Float32Array[] = [];
-  private segSamples = 0;
-  private preroll: Float32Array[] = [];
+  private segmenter = new Segmenter(audio => {
+    this.queue.push(audio);
+    void this.pump();
+  });
   private queue: Float32Array[] = [];
   private busy = false;
   private idle: (() => void)[] = [];
   private paused = false;
+  private prompt = '';
   private h: MicHandlers;
 
   constructor(private language: string, handlers: MicHandlers) {
@@ -183,6 +140,11 @@ export class InAppMic {
 
   setHandlers(h: MicHandlers) {
     this.h = h;
+  }
+
+  /** Vocabulario de la charla (ver vocabPrompt): Whisper lo usa para escribir bien nombres y términos. */
+  setPrompt(prompt: string) {
+    this.prompt = prompt;
   }
 
   /** Abre el micrófono. Llamar desde un gesto del usuario. */
@@ -227,7 +189,7 @@ export class InAppMic {
   pause() {
     if (this.paused) return;
     this.paused = true;
-    if (this.speaking) this.endSegment();
+    this.segmenter.flush();
     this.src?.disconnect();
     this.stream?.getTracks().forEach(t => t.stop());
     this.src = undefined;
@@ -242,62 +204,15 @@ export class InAppMic {
     this.src = this.ctx.createMediaStreamSource(this.stream);
     this.src.connect(this.node);
     if (this.ctx.state === 'suspended') await this.ctx.resume();
-    this.noiseDb = -60;
+    this.segmenter.resetNoise();
     this.paused = false;
   }
 
   private onAudio(chunk: Float32Array) {
     // Apagado, el nodo sigue recibiendo silencio: no se analiza.
     if (this.paused) return;
-    const x = new Float32Array(chunk);
-
-    let peak = -120;
-    for (let off = 0; off + FRAME <= x.length; off += FRAME) {
-      const frame = x.subarray(off, off + FRAME);
-      let sum = 0;
-      for (const v of frame) sum += v * v;
-      const db = 20 * Math.log10(Math.sqrt(sum / FRAME) + 1e-9);
-      peak = Math.max(peak, db);
-      this.vad(frame, db);
-    }
-    this.h.onLevel?.(peak, this.speaking);
-  }
-
-  private vad(frame: Float32Array, db: number) {
-    // Piso de ruido: baja rápido y sube despacio, para no confundir voz con ruido.
-    if (!this.speaking) this.noiseDb = db < this.noiseDb ? db : this.noiseDb * 0.995 + db * 0.005;
-    const voiced = db > Math.max(this.noiseDb + 10, -55);
-    if (!this.speaking) {
-      this.preroll.push(frame);
-      if (this.preroll.length > PREROLL_FRAMES) this.preroll.shift();
-      this.voicedRun = voiced ? this.voicedRun + 1 : 0;
-      if (this.voicedRun >= START_FRAMES) {
-        this.speaking = true;
-        this.silentRun = 0;
-        this.seg = [...this.preroll];
-        this.segSamples = this.seg.length * FRAME;
-        this.preroll = [];
-      }
-      return;
-    }
-    this.seg.push(frame);
-    this.segSamples += FRAME;
-    this.silentRun = voiced ? 0 : this.silentRun + 1;
-    if (this.silentRun >= END_FRAMES || this.segSamples >= MAX_SAMPLES) this.endSegment();
-  }
-
-  private endSegment() {
-    this.speaking = false;
-    this.voicedRun = 0;
-    if (this.segSamples >= MIN_SAMPLES) {
-      const audio = new Float32Array(this.segSamples);
-      let at = 0;
-      for (const f of this.seg) { audio.set(f, at); at += f.length; }
-      this.queue.push(audio);
-      void this.pump();
-    }
-    this.seg = [];
-    this.segSamples = 0;
+    const peak = this.segmenter.push(chunk);
+    this.h.onLevel?.(peak, this.segmenter.speaking);
   }
 
   private async pump() {
@@ -311,7 +226,7 @@ export class InAppMic {
     if (!transcribe) return void this.pump();
     this.busy = true;
     try {
-      const text = cleanText(await transcribe(audio, this.language === 'en' ? 'english' : 'spanish'));
+      const text = cleanText(await transcribe(audio, { language: this.language === 'en' ? 'en' : 'es', maxNewTokens: maxTokens(audio.length), prompt: this.prompt }));
       if (text) this.h.onSentence(text);
     } catch (e) {
       this.h.onError?.((e as Error).message);
@@ -323,7 +238,7 @@ export class InAppMic {
 
   /** Cierra la frase en curso y espera a que se transcriba lo pendiente (con tope). */
   async drain(ms = 60_000): Promise<void> {
-    if (this.speaking) this.endSegment();
+    this.segmenter.flush();
     if (!this.busy && this.queue.length === 0) return;
     await Promise.race([new Promise<void>(r => this.idle.push(r)), new Promise(r => setTimeout(r, ms))]);
   }

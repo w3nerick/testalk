@@ -7,3 +7,4 @@ stt/grabaciones
 *.jsonl
 .DS_Store
 __pycache__
+app/.stt-cache

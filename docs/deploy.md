@@ -75,7 +75,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 
 **Una hora antes**
 - [ ] Laptop conectada a corriente y a una red estable
-- [ ] Si usas el **micrófono de la app**: en `#/presentar`, **Usar el micrófono de la app** para precargar Whisper (la primera vez baja 80-200 MB) y habla hasta ver "Te escuché: «…»". Si usas el script de Python, los tres puntos siguientes
+- [ ] Si usas el **micrófono de la app**: en `#/presentar`, **Usar el micrófono de la app** para precargar Whisper (baja 80-200 MB; en Polkadot Desktop en cada arranque, así que **no cierres Desktop** hasta terminar) y habla hasta ver "Te escuché: «…»". Si usas el script de Python, los tres puntos siguientes
 - [ ] Micrófono correcto (`--list-mics`); sin audífonos Bluetooth robando la entrada
 - [ ] Transcriptor arrancado y con el modelo caliente
 - [ ] Polkadot Desktop abierto en `devnet-test-talk26.dot/#/presentar`

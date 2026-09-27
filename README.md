@@ -150,7 +150,9 @@ testalk/
 │   │   │   ├── bulletin.ts     Cuota, permiso PreimageSubmit, subida y lectura
 │   │   │   ├── permissions.ts  Permisos de red del contenedor, al arrancar
 │   │   │   ├── stt.ts          Cliente WebSocket del transcriptor
-│   │   │   ├── mic.ts          Micrófono de la app: detector de voz y Whisper
+│   │   │   ├── mic.ts          Micrófono de la app: carga Whisper y transcribe frase a frase
+│   │   │   ├── speech.ts       Corte en frases, limpieza del texto y vocabulario base
+│   │   │   ├── whisper.ts      Whisper con transformers.js, con vocabulario como contexto
 │   │   │   ├── whisper.worker.ts  Whisper en un hilo aparte (la interfaz no se congela)
 │   │   │   ├── host.ts         waitForHost + timeouts para toda llamada al host
 │   │   │   └── ascii.ts        Onda de voz, sello y barras en ASCII
@@ -158,6 +160,7 @@ testalk/
 │   │   └── style.css           Sistema visual (claro y oscuro)
 │   ├── scripts/
 │   │   ├── verify.ts           Verificador por línea de comandos
+│   │   ├── bench-stt.ts        Banco de pruebas de la transcripción con un WAV (npm run bench-stt)
 │   │   └── icon.ts             Genera el ícono, el favicon y la marca (npm run icon)
 │   ├── brand/                  Ícono en SVG, favicon y marca de la barra superior
 │   ├── icon.png                Ícono de la app (manifest de DotNS)

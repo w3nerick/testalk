@@ -21,6 +21,8 @@ fírmala con tu wallet y publica un recibo que cualquiera verifica con un QR.
   <img src="docs/img/live.png" alt="Pantalla del presentador: transcripción en vivo con bloques de Asset Hub entre frases" width="100%" />
 </p>
 
+> **¿Vas a presentar?** Sigue la [guía para presentadores](docs/guia-presentadores.md): paso a paso con capturas, sin terminal.
+
 ---
 
 ## Contenido
@@ -174,7 +176,7 @@ testalk/
 │   ├── testalk_stt.py          Micrófono → VAD → faster-whisper → WebSocket
 │   └── guion-demo.txt          Guion para ensayar sin micrófono
 ├── examples/                   Recibos de ejemplo (válido y alterado)
-└── docs/                       Arquitectura, formato, verificación, deploy, guía para estudiantes y revisión de plataforma
+└── docs/                       Arquitectura, formato, verificación, deploy, guías para presentadores y estudiantes, y revisión de plataforma
 ```
 
 ## Inicio rápido
@@ -285,8 +287,9 @@ Caso de ejemplo para el piloto **Polkadot University**, UANL Monterrey,
 - [x] Anclar desde la app al sellar: **Sellar para siempre** en "Charla sellada" (Revive.call a TalkRegistry firmado por la identidad `.dot`); `npm run anchor` queda de respaldo
 - [x] Verificar en People chain que el username declarado sea dueño de la llave (web y CLI)
 - [x] Firmar con la identidad `.dot` (username → People chain → cuenta dueña), con la cuenta de la app de respaldo
-- [ ] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): lo mide `#/diagnostico`
+- [x] Confirmar en Polkadot Desktop que el host firma con la identidad (`signRawWithLegacyAccount`): charla de prueba del 28 sep 2026 con identidad verificada en People chain
 - [x] Grabar y transcribir **dentro de la app**, sin el script de Python: micrófono del contenedor + Whisper base en un Web Worker (WebGPU o WebAssembly), con botón y tecla **M** para encender o apagar el micrófono
+- [x] [Guía para presentadores](docs/guia-presentadores.md) con capturas reales de Polkadot Desktop y Polkadot App
 - [ ] Probar el micrófono de la app en una charla real en Polkadot Desktop
 - [ ] Charla de prueba de 15 minutos, sellada de principio a fin
 

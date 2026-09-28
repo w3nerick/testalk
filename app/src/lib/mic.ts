@@ -131,6 +131,8 @@ export class InAppMic {
   private busy = false;
   private idle: (() => void)[] = [];
   private paused = false;
+  private resuming: Promise<void> | null = null;
+  private closed = false;
   private prompt = '';
   private h: MicHandlers;
 
@@ -197,11 +199,26 @@ export class InAppMic {
     this.h.onLevel?.(-120, false);
   }
 
-  /** Vuelve a encenderlo. El permiso ya está dado: el contenedor no pregunta otra vez. */
-  async resume() {
-    if (!this.paused || !this.ctx || !this.node) return;
-    this.stream = await navigator.mediaDevices.getUserMedia(AUDIO);
-    this.src = this.ctx.createMediaStreamSource(this.stream);
+  /**
+   * Vuelve a encenderlo. El permiso ya está dado: el contenedor no pregunta otra vez.
+   * Un segundo toque mientras abre no pide otro micrófono: dos abiertos dejaban uno
+   * sin apagar.
+   */
+  resume(): Promise<void> {
+    if (!this.paused || this.closed || !this.ctx || !this.node) return Promise.resolve();
+    this.resuming ??= this.reopen().finally(() => { this.resuming = null; });
+    return this.resuming;
+  }
+
+  private async reopen() {
+    const stream = await navigator.mediaDevices.getUserMedia(AUDIO);
+    // Se selló o se salió de la vista mientras abría: se suelta sin usarlo.
+    if (this.closed || !this.ctx || !this.node) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+    this.stream = stream;
+    this.src = this.ctx.createMediaStreamSource(stream);
     this.src.connect(this.node);
     if (this.ctx.state === 'suspended') await this.ctx.resume();
     this.segmenter.resetNoise();
@@ -243,14 +260,20 @@ export class InAppMic {
     await Promise.race([new Promise<void>(r => this.idle.push(r)), new Promise(r => setTimeout(r, ms))]);
   }
 
-  /** Transcribe lo pendiente y suelta el micrófono. */
+  /**
+   * Al sellar: suelta el micrófono al instante (lo que se diga después no entra al
+   * recibo) y luego transcribe lo que ya estaba dicho.
+   */
   async stop(): Promise<void> {
+    this.closed = true;
+    this.pause();
     await this.drain();
     this.close();
   }
 
   /** Suelta el micrófono sin sellar (al salir de la vista). */
   close() {
+    this.closed = true;
     this.node?.disconnect();
     this.src?.disconnect();
     this.stream?.getTracks().forEach(t => t.stop());

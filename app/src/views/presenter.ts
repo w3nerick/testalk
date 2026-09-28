@@ -81,10 +81,12 @@ export function renderPresenter(root: HTMLElement): Cleanup {
   const levelListeners = new Set<(db: number, speaking: boolean) => void>();
   const micChanged = () => micListeners.forEach(f => f());
   cleanups.push(() => appMic?.close());
+  // Al pulsar "Sellar" el micrófono se suelta y ya no se puede volver a encender.
+  let micReleased = false;
 
   /** Enciende o apaga el micrófono de la app. */
   async function toggleMic() {
-    if (!appMic) return;
+    if (!appMic || micReleased) return;
     try {
       if (appMic.isPaused()) await appMic.resume();
       else appMic.pause();
@@ -109,14 +111,19 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     mic.setPrompt(micPrompt);
     try {
       await mic.open();
-      await loadWhisper(p => { micProgress = p; micChanged(); });
+      // Abierto ya se puede apagar, y se cierra al salir, aunque Whisper siga bajando
+      // (en Desktop se descarga en cada arranque y la charla puede empezar antes).
       appMic = mic;
+      micChanged();
+      await loadWhisper(p => { micProgress = p; micChanged(); });
       micState = 'ready';
     } catch (e) {
       mic.close();
+      if (appMic === mic) appMic = null;
       micState = 'error';
       micNote = (e as Error).message;
-      startStt(sttHandlers);
+      // Si falló ya sellada la charla, no se vuelve a escuchar.
+      if (!micReleased) startStt(sttHandlers);
     }
     micChanged();
   }
@@ -216,6 +223,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     };
     const drawStt = (s: SttStatus = sttStatus) => {
       const lang = (root.querySelector('#lang') as HTMLSelectElement)?.value ?? 'es';
+      if (micState !== 'loading') delete sttRow.dataset.view;
       if (micState === 'ready') {
         const off = appMic?.isPaused() ?? false;
         sttRow.className = `check-row ${off ? '' : 'ok'}`;
@@ -228,11 +236,19 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       }
       if (micState === 'loading') {
         const p = micProgress;
-        sttRow.className = 'check-row';
-        sttRow.innerHTML = `${tag('wait')}<div class="grow">Preparando el micrófono de la app
-          <div class="muted mono" style="font-size:12.5px">${p && p.total
-            ? `${asciiBar(p.loaded, p.total)} ${Math.round(p.progress)} % · ${Math.round(p.loaded / 1e6)} de ${Math.round(p.total / 1e6)} MB`
-            : 'Permiso del micrófono y descarga de Whisper'}</div></div>`;
+        // El botón no se redibuja con cada avance de la descarga: se perdería el clic.
+        const view = `loading:${appMic ? appMic.isPaused() : '-'}`;
+        if (sttRow.dataset.view !== view) {
+          sttRow.dataset.view = view;
+          sttRow.className = 'check-row';
+          sttRow.innerHTML = `${tag('wait')}<div class="grow">Preparando el micrófono de la app
+            <div class="muted mono" style="font-size:12.5px" id="mic-prog"></div></div>
+            ${appMic ? micButton(appMic.isPaused(), 'sm') : ''}`;
+          sttRow.querySelector('#mic-toggle')?.addEventListener('click', toggleMic);
+        }
+        sttRow.querySelector('#mic-prog')!.textContent = p && p.total
+          ? `${asciiBar(p.loaded, p.total)} ${Math.round(p.progress)} % · ${Math.round(p.loaded / 1e6)} de ${Math.round(p.total / 1e6)} MB`
+          : 'Permiso del micrófono y descarga de Whisper';
         return;
       }
       if (s === 'on') {
@@ -308,7 +324,7 @@ export function renderPresenter(root: HTMLElement): Cleanup {
             <span class="pill" id="stt-pill"></span>
             <span class="pill live" id="blk-pill">■ <span id="blk-n">…</span></span>
           </div>
-          ${appMic ? `<div class="card" id="mic-card"></div>` : ''}
+          <div class="card" id="mic-card" hidden></div>
           <div class="card stats">
             <div class="stat"><b id="st-time">0:00</b><span>duración</span></div>
             <div class="stat"><b id="st-s">0</b><span>frases</span></div>
@@ -390,21 +406,30 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       counts();
       saveDraft(draft);
     };
-    const micCard = root.querySelector<HTMLElement>('#mic-card');
+    // Siempre en la página: el micrófono puede terminar de prepararse ya empezada la charla.
+    const micCard = root.querySelector<HTMLElement>('#mic-card')!;
     const drawStt = (s: SttStatus) => {
       if (appMic) {
-        const off = appMic.isPaused();
+        const off = micReleased || appMic.isPaused();
         sttPill.className = `pill ${off ? 'off' : 'on'}`;
         sttPill.innerHTML = off
           ? `${icon('microphoneSlash')}micrófono apagado`
           : `<i class="mono" id="live-lvl" aria-hidden="true">${levelBar(-90)}</i>escuchando`;
-        if (micCard) {
-          micCard.innerHTML = `${micButton(off, 'block')}
-            <p class="faint" style="font-size:13px;margin:10px 0 0">Tecla <span class="mono">M</span>. Lo que digas con el micrófono apagado no entra al recibo.</p>`;
-          micCard.querySelector('#mic-toggle')?.addEventListener('click', toggleMic);
+        micCard.hidden = micReleased;
+        if (micReleased) return;
+        // El botón solo se redibuja al cambiar de estado, no con cada frase o avance de la descarga.
+        if (micCard.dataset.off !== String(off)) {
+          micCard.dataset.off = String(off);
+          micCard.innerHTML = `${micButton(off, 'block')}<p class="faint" id="mic-note" style="font-size:13px;margin:10px 0 0"></p>`;
+          micCard.querySelector('#mic-toggle')!.addEventListener('click', toggleMic);
         }
+        const p = micProgress;
+        micCard.querySelector('#mic-note')!.innerHTML = `Tecla <span class="mono">M</span>. ${micState === 'loading'
+          ? `Cargando Whisper${p?.total ? ` (${Math.round(p.progress)} %)` : ''}: lo que digas antes de que termine no se transcribe.`
+          : 'Lo que digas con el micrófono apagado no entra al recibo.'}`;
         return;
       }
+      micCard.hidden = true;
       sttPill.className = `pill ${s === 'on' ? 'on' : 'off'}`;
       sttPill.innerHTML = s === 'on' ? `<i class="ameter" aria-hidden="true"></i>escuchando` : `${icon('microphoneSlash')}sin transcriptor`;
     };
@@ -418,7 +443,8 @@ export function renderPresenter(root: HTMLElement): Cleanup {
     micListeners.add(redrawLive);
     // Tecla M: encender o apagar sin buscar el botón (no mientras se escribe una frase a mano).
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key.toLowerCase() !== 'm' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      // Dejar la tecla apretada repite el evento: solo cuenta el primero.
+      if (ev.key.toLowerCase() !== 'm' || ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if ((ev.target as HTMLElement)?.closest('input, textarea, select')) return;
       ev.preventDefault();
       void toggleMic();
@@ -499,7 +525,12 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       draw(step);
       if (!liveClosed) {
         if (appMic) {
-          await appMic.stop();
+          // Se apaga ya (indicador del sistema incluido) y se ve apagado mientras
+          // Whisper termina las últimas frases.
+          const closing = appMic.stop();
+          micReleased = true;
+          micChanged();
+          await closing;
           appMic = null;
         } else {
           stopStt();

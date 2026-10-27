@@ -25,7 +25,7 @@ Si algo sale distinto, ve a [Si algo falla](#si-algo-falla).
 
 ## 1. Abre testalk
 
-En Polkadot Desktop entra a **`devnet-test-talk26.dot`** y pulsa **Presentar**.
+En Polkadot Desktop entra a **`proof-of-talk-v02.dot`** y pulsa **Presentar**.
 El recuadro negro muestra bloques reales de Asset Hub llegando en vivo.
 
 <img src="img/guia/01-portada.png" alt="Portada de testalk con bloques de Asset Hub en vivo" width="100%" />
@@ -162,6 +162,6 @@ Más abajo está **Lo que se dijo**: cada frase con el bloque y la hora.
 | *Sin sello permanente* | Tu cuenta no tiene saldo. Pide PAS en el faucet o pásale el JSON al organizador para que lo selle. |
 | El sello no se confirmó a tiempo | Revisa en **Verificar** en un minuto antes de reintentar: pudo haber entrado. |
 
-Antes del evento puedes abrir **`devnet-test-talk26.dot/#/diagnostico`**:
+Antes del evento puedes abrir **`proof-of-talk-v02.dot/#/diagnostico`**:
 prueba el micrófono, la subida a Bulletin y el sello permanente (este último
 simula y no envía nada), y genera un reporte para el organizador.

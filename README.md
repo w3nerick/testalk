@@ -71,7 +71,7 @@ sequenceDiagram
     autonumber
     participant M as Micrófono
     participant S as stt/ (Whisper local)
-    participant A as app/ (devnet-test-talk26.dot)
+    participant A as app/ (proof-of-talk-v02.dot)
     participant H as Asset Hub
     participant W as Polkadot App (wallet)
     participant P as People chain
@@ -89,7 +89,7 @@ sequenceDiagram
     A->>W: firmar bytes canónicos con esa cuenta
     W-->>A: firma sr25519
     A->>B: subir recibo (preimage)
-    A-->>A: QR a https://devnet-test-talk26.dev-dot.li/#/<CID>
+    A-->>A: QR a https://proof-of-talk-v02.dev-dot.li/#/<CID>
     Note over A,H: después de la charla
     A->>H: TalkRegistry.seal(huella, firma, ...) en pallet-revive
 ```
@@ -132,7 +132,7 @@ Lo que cambia:
 | Audio | WAV local, fuera del recibo | No se guarda: el recibo lleva solo texto y la referencia externa es el video de la charla |
 | Cierre | Última frase sin bloque posterior | Remache de bloque al sellar |
 | Firmante | `getLegacyAccountSigner` del dueño del username | Lo mismo; si el host no lo permite, la cuenta de la app, y el verificador lo dice |
-| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://devnet-test-talk26.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
+| QR | `polkadotapp://proofoftalk.dot/#/<cid>` | `https://proof-of-talk-v02.dev-dot.li/#/<cid>` (abre con la cámara, sin app) |
 | Verificación sin app | No | CLI: `npm run verify` |
 | Permanencia | Bulletin (14 días) | Registro en pallet-revive: [`TalkRegistry`](contract/) |
 | Ensayo | Requiere el host | Modo ensayo en cualquier navegador |
@@ -141,7 +141,7 @@ Lo que cambia:
 
 ```
 testalk/
-├── app/                        Interfaz web (se publica en devnet-test-talk26.dot)
+├── app/                        Interfaz web (se publica en proof-of-talk-v02.dot)
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── artifact.ts     Formato del recibo, firma canónica, CID, verificación
@@ -257,12 +257,12 @@ npm run verify -- /tmp/pot.json   # firma válida; bloques de otra red, sin comp
 ```bash
 cd app
 pad login          # una vez: QR con Polkadot App
-npm run deploy     # build + PAD_ENV=devnet pad dist devnet-test-talk26.dot
+npm run deploy     # build + PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle (pad 0.22.1)
 ```
 
 Ejecútalo en una terminal propia: `pad` pide confirmaciones interactivas.
 
-Después abre **`devnet-test-talk26.dot/#/diagnostico`** en Polkadot Desktop y en el
+Después abre **`proof-of-talk-v02.dot/#/diagnostico`** en Polkadot Desktop y en el
 celular. Prueba cada pieza de la plataforma desde el dispositivo (canal con el
 host, permisos de red, micrófono, WebGPU, bloques, consulta histórica,
 transcriptor, firma y Bulletin) y deja un reporte copiable.

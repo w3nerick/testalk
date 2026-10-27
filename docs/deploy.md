@@ -17,7 +17,7 @@ cuenta mapeada.
 cd app
 npm install
 pad login          # una vez; QR con Polkadot App. El handshake puede tardar minutos.
-npm run deploy     # npm run build && PAD_ENV=devnet pad dist devnet-test-talk26.dot
+npm run deploy     # npm run build && PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle (pad 0.22.1)
 ```
 
 - Corre `pad` en una terminal propia: pide confirmaciones interactivas.
@@ -40,8 +40,10 @@ la **base**.
 | 6 a 8 | Personhood Lite (con 2 dígitos) o Full (sin dígitos) |
 | 9 o más | Registro abierto (NoStatus) |
 
-El dominio es **`devnet-test-talk26`**: base de 16, dos dígitos, registro
-abierto, libre al 25 sep 2026. `testalk` (base 7) y `testalk26` (base 7 más
+El dominio es **`proof-of-talk-v02`**: base de 15, dos dígitos, registro
+abierto, libre al 27 oct 2026. Hasta esa fecha fue `devnet-test-talk26`, que es de la cuenta
+de `pad login` de pad 0.16.x: con la Polkadot App de TrUAPI 0.25 esa sesión ya no
+firma («no allowance set for account») y pad 0.22.1 inicia sesión con otra cuenta. `testalk` (base 7) y `testalk26` (base 7 más
 dos dígitos) piden personhood: `testalk26` falló en la verificación previa de
 `pad` con *"requires ProofOfPersonhoodLite, but this signer is NoStatus"*,
 antes de gastar nada
@@ -68,8 +70,8 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 ## Checklist del día del evento
 
 **Una semana antes**
-- [ ] Abrir `devnet-test-talk26.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional. Las filas clave: **Firma con identidad .dot**, **Bulletin: subida y clave** y las dos lecturas.
-- [ ] Abrir `https://devnet-test-talk26.dev-dot.li/#/<CID de la prueba>` en un celular **sin** Polkadot App: debe abrir el recibo (el gateway conserva el `#`).
+- [ ] Abrir `proof-of-talk-v02.dot/#/diagnostico` en Polkadot Desktop **y** en el celular, pulsar **Probar con subida a Bulletin** y guardar el reporte. Todo debe salir en verde salvo lo marcado como opcional. Las filas clave: **Firma con identidad .dot**, **Bulletin: subida y clave** y las dos lecturas.
+- [ ] Abrir `https://proof-of-talk-v02.dev-dot.li/#/<CID de la prueba>` en un celular **sin** Polkadot App: debe abrir el recibo (el gateway conserva el `#`).
 - [ ] Charla de prueba completa en Desktop, sellada y verificada desde otro celular
 - [ ] Confirmar que el QR proyectado se lee desde el fondo de la sala
 
@@ -78,7 +80,7 @@ de equilibrio en CPU; `medium` mejora jerga técnica con más latencia.
 - [ ] Si usas el **micrófono de la app**: en `#/presentar`, **Usar el micrófono de la app** para precargar Whisper (baja 80-200 MB; en Polkadot Desktop en cada arranque, así que **no cierres Desktop** hasta terminar) y habla hasta ver "Te escuché: «…»". Si usas el script de Python, los tres puntos siguientes
 - [ ] Micrófono correcto (`--list-mics`); sin audífonos Bluetooth robando la entrada
 - [ ] Transcriptor arrancado y con el modelo caliente
-- [ ] Polkadot Desktop abierto en `devnet-test-talk26.dot/#/presentar`
+- [ ] Polkadot Desktop abierto en `proof-of-talk-v02.dot/#/presentar`
 - [ ] Wallet conectada: la fila de wallet en verde y diciendo **Firmarás con tu identidad .dot**
 - [ ] Las tres filas de preparación en verde
 

@@ -382,25 +382,35 @@ esperando.
 
 | Paquete de tu app | Códec |
 |---|---|
-| `@parity/truapi` 0.5.1 a 0.13.1 (`product-sdk-host` 0.14.1 a 0.19.1, `product-sdk-signer` 0.11.1 a 0.14.4) | **1** |
-| `@parity/truapi` 0.16.0 en adelante (`product-sdk-host` 0.20.0+, `product-sdk-signer` 0.14.5+) | 2 |
+| `@parity/truapi` 0.5.1 a 0.13.1 (`product-sdk-host` 0.14.1 a 0.19.1, `product-sdk-signer` 0.11.1 a 0.14.4) | 1 |
+| `@parity/truapi` 0.16.0 a 0.24 (`product-sdk-host` 0.20.0 a 0.27) | 2 |
+| `@parity/truapi` **0.25** (`product-sdk-host` **0.28.0**, `product-sdk-signer` **0.17.3** = `@parity/product-sdk` **0.39.0**) | **3** |
 
-Polkadot Desktop 0.1.3 (septiembre de 2026) habla el **códec 1**. Con él
-funcionan `product-sdk-host` **0.19.1** + `product-sdk-signer` **0.14.4**
-(o el paquete `@parity/product-sdk` **0.27.0**, que trae esa pareja):
+Desde el update del devnet del **22–23 de octubre de 2026**, todos los hosts
+(Polkadot App Android e iOS `devnet/2026-10-22.1`, Polkadot Desktop **0.1.4** y
+`dev-dot.li`) hablan TrUAPI 0.25, el **códec 3**. Las apps con el códec 1 o 2
+ya no conectan. Usa exactamente el SDK 0.39.0 (el 0.40 en adelante habla
+TrUAPI 0.26, que estos hosts todavía no entienden) y `polkadot-api` 3:
 
 ```bash
-npm install --save-exact @parity/product-sdk-host@0.19.1 @parity/product-sdk-signer@0.14.4
-npm ls @parity/product-sdk-host @parity/truapi    # debe haber UNA sola copia de cada uno
+npm install --save-exact @parity/product-sdk@0.39.0 polkadot-api@3.2.1
+# o, si usas los paquetes sueltos, las versiones que fija el 0.39.0:
+npm install --save-exact @parity/product-sdk-host@0.28.0 @parity/product-sdk-signer@0.17.3 polkadot-api@3.2.1
+npm ls @parity/truapi polkadot-api    # debe haber UNA sola copia de cada uno
 ```
+
+Lo que cambia con `polkadot-api` 3: los firmantes son `TxCreator`
+(`getTxCreator` de `polkadot-api/tx-creator` en vez de `getPolkadotSigner`),
+`tx.signSubmitAndWatch(signer)` pasa a `tx.createSubmitAndWatch(signer)`,
+`signAndSubmit` a `createAndSubmit`, `sign` a `create`, y los eventos son
+`created` → `broadcasted` → `inBestBlock` → `finalized`.
 
 Cómo saber qué habla tu host, sin adivinar:
 
 ```bash
-# Versión del protocolo que trae Polkadot Desktop (Mac)
-npx @electron/asar extract-file "/Applications/Polkadot Desktop Dev.app/Contents/Resources/app.asar" \
-  node_modules/@novasamatech/host-api/dist/constants.js && cat constants.js
-# → export const SCALE_CODEC_PROTOCOL_ID = 1;
+# Versión de TrUAPI de un host: viene en las notas de su release
+gh release view devnet/2026-10-22.1 -R Polkadot-Community-Foundation/polkadot-desktop-community
+# → "pin truapi-host 0.25.0-pcf.1"
 
 # Versión que habla tu app
 grep -h "TRUAPI_CODEC_VERSION = " node_modules/@parity/truapi/dist/generated/client.js
@@ -474,7 +484,7 @@ por detrás. Esto es lo que medimos el 25 y 26 de septiembre de 2026:
 
 | La documentación dice | Lo que pasó de verdad |
 |---|---|
-| *"Install the latest release of every package"* | Vale para `pad` y `dotns`. Para el SDK de tu app, **no**: el más nuevo habla el códec 2 y Polkadot Desktop 0.1.3 el 1 ([sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo)) |
+| *"Install the latest release of every package"* | Vale para `pad` y `dotns`. Para el SDK de tu app, **no**: en octubre de 2026 los hosts hablan TrUAPI 0.25 (SDK 0.39.0) y el SDK más nuevo ya habla la 0.26 ([sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo)) |
 | *"Use labels nine characters or longer"* | Se cuenta la base **sin** los dígitos finales: `testalk26` tiene 9 caracteres y pidió personhood ([paso 3](#3-elegir-el-nombre-antes-que-nada)) |
 | *"Reads are container-only; there is no public IPFS-gateway fallback"* | El gateway IPFS del devnet sirvió lo que subió el host con `submit()` en 274 ms, byte por byte |
 | El archivo de configuración publica nombre, descripción e ícono | Con `pad login`, en `pad` 0.16.7 el manifest falla siempre ([paso 6](#el-manifest-puede-fallar-y-la-app-funciona-igual)) |
@@ -494,7 +504,7 @@ así el siguiente estudiante no pierde el mismo día.
 
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
-| El SDK dice `connected` pero **nada** responde: permisos, cuentas, firmas | Tu app y el host hablan distinta versión de códec | [Sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo): usa `product-sdk-host` 0.19.1 + `signer` 0.14.4 con Desktop 0.1.3 |
+| El SDK dice `connected` pero **nada** responde: permisos, cuentas, firmas | Tu app y el host hablan distinta versión de códec | [Sección 9](#9-la-app-y-el-host-deben-hablar-el-mismo-protocolo): usa `@parity/product-sdk` 0.39.0 (TrUAPI 0.25) con los hosts de octubre de 2026 |
 | `testalk26.dot requires ProofOfPersonhoodLite, but this signer is NoStatus` | La base del nombre tiene menos de 9 caracteres | Elige un nombre con base de 9 o más ([paso 3](#3-elegir-el-nombre-antes-que-nada)). No se gastó nada: falló en la verificación previa |
 | La app aparece en otra red o el nombre "no existe" | Faltó `--env devnet` o `PAD_ENV=devnet` | Agrégalo en todos los comandos de `pad` y `dotns` |
 | `pad` se queda esperando y la `Y` no hace nada | La terminal manda el proceso a segundo plano | Usa Terminal.app u otra terminal normal |

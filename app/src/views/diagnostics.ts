@@ -349,7 +349,7 @@ export function renderDiagnostics(root: HTMLElement): Cleanup {
         const signer = txSignerFor(payer);
         if (!signer) return ['no', 'sin firmante de transacciones para esta cuenta'];
         const tx = (await getClient()).getUnsafeApi().tx.System.remark({ remark: Binary.fromText('testalk diagnóstico') });
-        const signed = await withTimeout(tx.sign(signer), HOST_SUBMIT_MS);
+        const signed = await withTimeout(tx.create(signer), HOST_SUBMIT_MS);
         if (signed === TIMED_OUT) return ['no', 'la firma no llegó a tiempo: revisa el celular'];
         // Según la versión de polkadot-api llega como hex o como bytes.
         const out = signed as unknown as string | Uint8Array;

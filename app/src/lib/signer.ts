@@ -19,7 +19,7 @@ import { getAccountsProvider, isInsideContainerSync } from '@parity/product-sdk-
 // Import estático a propósito: en el gateway dev-dot.li un chunk que se baja al pulsar
 // "Conectar" falló con "Failed to fetch dynamically imported module".
 import { SignerManager, type SignerManager as SM } from '@parity/product-sdk-signer';
-import type { PolkadotSigner } from 'polkadot-api';
+import type { SignerTxCreator as PolkadotSigner } from 'polkadot-api/tx-creator';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { waitForHost, withTimeout, describeError, TIMED_OUT, HOST_QUERY_MS, HOST_SUBMIT_MS } from './host';
@@ -88,12 +88,15 @@ export async function connectSpeaker(): Promise<Speaker> {
     return speaker;
   }
 
-  const u = await withTimeout(manager.getUserId(), HOST_QUERY_MS).catch(() => null);
-  username = u && u !== TIMED_OUT && u.ok ? u.value.primaryUsername || null : null;
+  // El host puede mostrar un cuadro para compartir la identidad (SDK 0.39): tiempo de diálogo, no de consulta
+  const u = await withTimeout(manager.getUserId(), HOST_SUBMIT_MS).catch((e: unknown) => ({ ok: false as const, error: e }));
+  username = u !== TIMED_OUT && u.ok ? u.value.primaryUsername || null : null;
   identity = null;
   identityNote = null;
   if (!username) {
-    identityNote = 'tu cuenta no tiene username';
+    identityNote = u === TIMED_OUT ? 'el host no entregó tu username a tiempo (¿aprobaste compartir tu identidad?)'
+      : !u.ok ? `el host no entregó tu username: ${describeError(u.error)}`
+      : 'tu cuenta no tiene username';
   } else {
     try {
       const owner = await usernameOwner(username);

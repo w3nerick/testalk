@@ -6,9 +6,9 @@ const version = (pkg: string) => JSON.parse(read(`${pkg}/package.json`)).version
 
 /**
  * Versiones del SDK y del protocolo host ↔ app, visibles en #/diagnostico.
- * El host y la app deben hablar el mismo códec de truapi: Polkadot Desktop 0.1.3
- * (host-api 0.9.4) habla el 1; truapi 0.16 en adelante habla el 2 y el host
- * descarta sus peticiones sin responder.
+ * El host y la app deben hablar el mismo códec de truapi: desde el 22–23 oct 2026
+ * la Polkadot App, Desktop 0.1.4 y dev-dot.li hablan TrUAPI 0.25 (códec 3); con
+ * otro códec el host descarta las peticiones sin responder.
  */
 const sdk = {
   host: version('@parity/product-sdk-host'),

@@ -19,7 +19,7 @@ import { getAccountsProvider, isInsideContainerSync } from '@parity/product-sdk-
 // Import estático a propósito: en el gateway dev-dot.li un chunk que se baja al pulsar
 // "Conectar" falló con "Failed to fetch dynamically imported module".
 import { SignerManager, type SignerManager as SM } from '@parity/product-sdk-signer';
-import type { PolkadotSigner } from 'polkadot-api';
+import type { SignerTxCreator as PolkadotSigner } from 'polkadot-api/tx-creator';
 import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { waitForHost, withTimeout, describeError, TIMED_OUT, HOST_QUERY_MS, HOST_SUBMIT_MS } from './host';

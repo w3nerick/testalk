@@ -53,7 +53,7 @@ async function ownerViaPublic(username: string): Promise<string | null> {
 }
 
 async function ownerVia(client: PolkadotClient, username: string): Promise<string | null> {
-  // polkadot-api 2.2: la clave `Vec<u8>` va como Uint8Array y el AccountId vuelve en SS58.
+  // polkadot-api 3: la clave `Vec<u8>` va como Uint8Array y el AccountId vuelve en SS58.
   const q = client.getUnsafeApi().query.Resources.UsernameOwnerOf.getValue(new TextEncoder().encode(username)) as Promise<string | undefined>;
   const r = await withTimeout(q, PEOPLE_QUERY_MS);
   if (r === TIMED_OUT) throw new Error('People chain no respondió');

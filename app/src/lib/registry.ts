@@ -3,7 +3,8 @@
  * `get(huella)` con la runtime API ReviveApi.call. Funciona igual con el
  * provider del host o con un WebSocket público.
  */
-import { Binary, type PolkadotClient, type PolkadotSigner } from 'polkadot-api';
+import { Binary, type PolkadotClient } from 'polkadot-api';
+import type { SignerTxCreator as PolkadotSigner } from 'polkadot-api/tx-creator';
 import { decodeErrorResult, decodeFunctionResult, encodeFunctionData, type Abi } from 'viem';
 import abiJson from './TalkRegistry.abi.json' with { type: 'json' };
 import { REGISTRY_ADDRESS } from './network.ts';
@@ -28,7 +29,7 @@ export interface OnChainSeal {
 export async function readSeal(client: PolkadotClient, receiptHash: string): Promise<OnChainSeal | null> {
   const api = client.getUnsafeApi();
   const data = encodeFunctionData({ abi, functionName: 'get', args: [receiptHash as `0x${string}`] });
-  // `dest` es [u8; 20]: en polkadot-api 2.2 va como texto hex; los Vec<u8> son Uint8Array.
+  // `dest` es [u8; 20]: en polkadot-api 3 va como texto hex; los Vec<u8> son Uint8Array.
   // La api sin descriptors no tipa el resultado.
   const r = (await api.apis.ReviveApi.call(READ_ORIGIN, REGISTRY_ADDRESS, 0n, undefined, undefined, Binary.fromHex(data))) as {
     result?: { success: boolean; value: { flags: number; data: Uint8Array | string } };
@@ -118,7 +119,6 @@ const WEIGHT_CAP = { ref_time: 900_000_000_000n, proof_size: 3_000_000n };
 
 interface TxEvent {
   type: string;
-  found?: boolean;
   ok?: boolean;
   txHash?: string;
   block?: { number: number };
@@ -126,13 +126,14 @@ interface TxEvent {
 }
 
 /** Firma, envía y espera a que el bloque quede finalizado; avisa cuando ya se firmó. */
-function submit(tx: { signSubmitAndWatch(s: PolkadotSigner): { subscribe(o: object): { unsubscribe(): void } } }, signer: PolkadotSigner, onSigned: () => void): Promise<{ block: number; txHash: string }> {
+function submit(tx: { createSubmitAndWatch(s: PolkadotSigner): { subscribe(o: object): { unsubscribe(): void } } }, signer: PolkadotSigner, onSigned: () => void): Promise<{ block: number; txHash: string }> {
   return new Promise((resolve, reject) => {
-    const sub = tx.signSubmitAndWatch(signer).subscribe({
+    // polkadot-api 3: el firmante es un TxCreator; eventos created → broadcasted → inBestBlock → finalized
+    const sub = tx.createSubmitAndWatch(signer).subscribe({
       next: (e: TxEvent) => {
-        if (e.type === 'signed') onSigned();
+        if (e.type === 'created') onSigned();
         // Falló ya en el primer bloque: no hace falta esperar la finalización.
-        if (e.type === 'txBestBlocksState' && e.found && e.ok === false) {
+        if (e.type === 'inBestBlock' && e.ok === false) {
           sub.unsubscribe();
           reject(new Error(describeDispatch(e.dispatchError)));
         }

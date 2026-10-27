@@ -16,9 +16,14 @@ cuenta mapeada.
 ```bash
 cd app
 npm install
-pad login          # una vez; QR con Polkadot App. El handshake puede tardar minutos.
-npm run deploy     # npm run build && PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle (pad 0.22.1)
+npm run deploy     # build + HOME=~/.pad-worker PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle (pad 0.22.1)
 ```
+
+pad 0.22.1 firma la ficha (ícono y `app.<nombre>`) con su worker, nunca con la sesión de `pad login`. Con
+`HOME=~/.pad-worker` pad no ve la sesión: el worker registra, sigue siendo dueño y cada deploy actualiza contenido,
+ficha y `app.` sin firmas ni login. Mientras el nombre sea del worker (cuenta pública de desarrollo) otro podría
+cambiarlo; después del evento: `pad transfer app.proof-of-talk-v02.dot --env devnet` y luego
+`pad transfer proof-of-talk-v02.dot --env devnet`.
 
 - Corre `pad` en una terminal propia: pide confirmaciones interactivas.
 - `PAD_ENV=devnet` es obligatorio: el entorno por defecto de `pad` es otro.

@@ -31,7 +31,7 @@ export const PEOPLE_WS = [
  * package.json (deploy) y en polkadot-app-deploy.config.ts. Define además la
  * cuenta de producto de la app.
  */
-export const APP_LABEL = 'devnet-test-talk26';
+export const APP_LABEL = 'proof-of-talk-v02';
 export const APP_DOTNS = `${APP_LABEL}.dot`;
 
 /**

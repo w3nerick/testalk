@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle",
+    "deploy": "npm run build && HOME=\"$HOME/.pad-worker\" PAD_ENV=devnet pad dist proof-of-talk-v02.dot --env devnet --js-merkle",
     "check-deploy": "node scripts/check-deploy.ts",
     "verify": "node scripts/verify.ts",
     "icon": "node scripts/icon.ts",

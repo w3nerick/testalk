@@ -204,10 +204,24 @@ export function renderPresenter(root: HTMLElement): Cleanup {
       walletRow.className = `check-row ${s ? 'ok' : ''}`;
       walletRow.innerHTML = s
         ? `${tag(s.kind === 'app' ? 'warn' : 'ok')}<div class="grow"><b>${esc(s.username ?? shortAddr(s.address))}</b>
-             <div class="muted" style="font-size:13px">${signerNote(s)}</div></div>`
+             <div class="muted" style="font-size:13px">${signerNote(s)}</div>
+             ${s.kind === 'app' && !s.rehearsal ? `<div style="display:flex;gap:6px;margin-top:6px"><input class="input" id="typed-user" placeholder="tu-usuario.01" autocapitalize="off" spellcheck="false" style="flex:1" aria-label="Tu username de la Polkadot App" />
+               <button class="btn sm" id="use-typed">Usar mi username</button></div>` : ''}</div>`
         : `${tag('idle')}<div class="grow">Wallet del speaker<div class="muted" style="font-size:13px">Firma el recibo al final</div></div>
            <button class="btn sm primary" id="connect">Conectar</button>`;
       start.disabled = !s;
+      walletRow.querySelector('#use-typed')?.addEventListener('click', async ev => {
+        const b = ev.currentTarget as HTMLButtonElement;
+        const typed = (walletRow.querySelector('#typed-user') as HTMLInputElement).value;
+        b.disabled = true;
+        err.innerHTML = '';
+        try {
+          drawWallet(await connectSpeaker(typed));
+        } catch (e) {
+          err.innerHTML = `<div class="error-box">${icon('warningCircle')}${esc((e as Error).message)}</div>`;
+          b.disabled = false;
+        }
+      });
       walletRow.querySelector('#connect')?.addEventListener('click', async ev => {
         const b = ev.currentTarget as HTMLButtonElement;
         b.disabled = true;

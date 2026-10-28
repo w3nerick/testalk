@@ -24,7 +24,7 @@ import { hexToU8a, u8aToHex } from '@polkadot/util';
 import { encodeAddress } from '@polkadot/util-crypto';
 import { waitForHost, withTimeout, describeError, TIMED_OUT, HOST_QUERY_MS, HOST_SUBMIT_MS } from './host';
 import { APP_DOTNS } from './network';
-import { usernameOwner } from './people';
+import { usernameOf, usernameOwner } from './people';
 
 export type SignerKind = 'identity' | 'app' | 'rehearsal';
 
@@ -63,8 +63,10 @@ export function hasIdentitySigner(): boolean {
   return identity !== null;
 }
 
-/** Abre un diálogo: llamar solo desde un gesto del usuario. */
-export async function connectSpeaker(): Promise<Speaker> {
+/** Abre un diálogo: llamar solo desde un gesto del usuario.
+ * `typedUsername`: el que escribe la persona cuando el host no lo entrega
+ * (Polkadot Desktop 0.1.4: «No primary username for this session»). */
+export async function connectSpeaker(typedUsername?: string): Promise<Speaker> {
   const inside = isInsideContainerSync();
   if (inside && !(await waitForHost())) throw new Error(`No hay canal con Polkadot App. Abre ${APP_DOTNS} desde la app.`);
 
@@ -97,6 +99,14 @@ export async function connectSpeaker(): Promise<Speaker> {
     identityNote = u === TIMED_OUT ? 'el host no entregó tu username a tiempo (¿aprobaste compartir tu identidad?)'
       : !u.ok ? `el host no entregó tu username: ${describeError(u.error)}`
       : 'tu cuenta no tiene username';
+    // Sin username del host: el escrito o la cuenta del wallet que tenga username en People chain.
+    // Firmar con la identidad solo necesita su llave pública (getLegacyAccountSigner).
+    try {
+      const found = await identityWithoutHostUsername(typedUsername);
+      if (found) { username = found.username; identity = found.identity; identityNote = null; }
+    } catch (e) {
+      identityNote = `${identityNote}; ${(e as Error).message}`;
+    }
   } else {
     try {
       const owner = await usernameOwner(username);
@@ -124,6 +134,26 @@ export async function connectSpeaker(): Promise<Speaker> {
     ? { address: identity.address, pubkey: identity.pubkey, username, kind: 'identity', rehearsal: false }
     : { ...appKey, username, kind: 'app', rehearsal: false };
   return speaker;
+}
+
+async function identityWithoutHostUsername(typed?: string): Promise<{ username: string; identity: NonNullable<typeof identity> } | null> {
+  const ap = await withTimeout(getAccountsProvider(), HOST_QUERY_MS);
+  if (ap === TIMED_OUT || !ap) throw new Error('el host no entregó el proveedor de cuentas');
+  const name = typed?.trim().toLowerCase();
+  if (name) {
+    const owner = await usernameOwner(name);
+    if (!owner) throw new Error(`${name} no aparece en People chain`);
+    const publicKey = hexToU8a(owner);
+    return { username: name, identity: { address: encodeAddress(publicKey, 42), pubkey: owner, signer: ap.getLegacyAccountSigner({ publicKey, name }) } };
+  }
+  const accounts = await withTimeout(ap.getLegacyAccounts().match(v => v, () => []), HOST_QUERY_MS);
+  if (accounts === TIMED_OUT) return null;
+  for (const a of accounts) {
+    const address = encodeAddress(a.publicKey, 42);
+    const n = await usernameOf(address).catch(() => null);
+    if (n) return { username: n, identity: { address, pubkey: u8aToHex(a.publicKey), signer: ap.getLegacyAccountSigner({ publicKey: a.publicKey, name: n }) } };
+  }
+  return null;
 }
 
 /** Respaldo: firmar con la cuenta de la app si el host no firma con identidad. */

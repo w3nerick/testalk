@@ -60,6 +60,28 @@ async function ownerVia(client: PolkadotClient, username: string): Promise<strin
   return r ? u8aToHex(decodeAddress(r)) : null;
 }
 
+type Bytes = Uint8Array | string | undefined;
+const bytesToText = (u: Bytes) => (u == null ? null : typeof u === 'string'
+  ? (/^0x([0-9a-f]{2})*$/i.test(u) ? new TextDecoder().decode(Uint8Array.from(u.slice(2).match(/../g) ?? [], b => parseInt(b, 16))) : u)
+  : new TextDecoder().decode(u));
+
+async function usernameVia(client: PolkadotClient, ss58: string): Promise<string | null> {
+  const q = client.getUnsafeApi().query.Resources.Consumers.getValue(ss58) as Promise<{ full_username?: Bytes; lite_username?: Bytes } | undefined>;
+  const r = await withTimeout(q, PEOPLE_QUERY_MS);
+  if (r === TIMED_OUT) throw new Error('People chain no respondió');
+  return bytesToText(r?.full_username ?? r?.lite_username);
+}
+
+/** Username de una cuenta (`Resources.Consumers`): el completo si es persona verificada, si no el lite. */
+export async function usernameOf(ss58: string): Promise<string | null> {
+  if (!isInsideContainerSync()) return usernameVia(viaPublic(), ss58);
+  try {
+    return await usernameVia(await viaHost(), ss58);
+  } catch {
+    return usernameVia(viaPublic(), ss58);
+  }
+}
+
 /**
  * Llave pública (hex) dueña de `username`, o `null` si el username no existe.
  * Lanza si no se pudo consultar: eso es "sin comprobar", no "falso".
